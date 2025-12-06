@@ -9,7 +9,7 @@ if hasattr(held, "__all__"):
 
 def ld_from_tree_sequence(ts, recombination_rate, bins=None, chunk_size=10_000):
     """
-    Compute linkage disequilibrium statistics from a tskit tree sequence.
+    Compute linkage disequilibrium statistics from a tskit tree sequence. If memory is limited, use this function to compute LD statistics in batches.
 
     Parameters
     ----------
@@ -21,7 +21,8 @@ def ld_from_tree_sequence(ts, recombination_rate, bins=None, chunk_size=10_000):
         Left and right endpoints of distance bins for LD computation in Morgan.
         If not provided, uses the default binning scheme.
     chunk_size : int, optional
-        Number of mutations to process at a time. Default is 10_000.
+        Number of loci to process at a time. Default is 10,000.
+
     Returns
     -------
     numpy.ndarray
@@ -43,29 +44,28 @@ def ld_from_tree_sequence(ts, recombination_rate, bins=None, chunk_size=10_000):
     )
     n_bins = len(bins)
     stats = held.StreamingStats(n_bins)
+    # Use tskit's Variant object for efficient decoding
+    import tskit
 
-    # Process variants in chunks
-    genotype_chunk = []
-    positions_chunk = []
-
-    for variant in ts.variants():
-        # Convert to diploid genotypes
-        diploid_genotypes = variant.genotypes[::2] + variant.genotypes[1::2]
-        genotype_chunk.append(diploid_genotypes)
-        positions_chunk.append(int(variant.site.position))
-
-        # Process chunk when it reaches chunk_size
-        if len(genotype_chunk) >= chunk_size:
-            genotype_matrix = np.array(genotype_chunk, dtype=np.int32)
-            positions_array = np.array(positions_chunk, dtype=np.int32)
-            stats.update_batch(genotype_matrix, positions_array, bins)
-            genotype_chunk = []
-            positions_chunk = []
-
-    # Process remaining variants
-    if genotype_chunk:
-        genotype_matrix = np.array(genotype_chunk, dtype=np.int32)
-        positions_array = np.array(positions_chunk, dtype=np.int32)
-        stats.update_batch(genotype_matrix, positions_array, bins)
-
+    variant = tskit.Variant(ts)
+    num_samples = ts.num_samples
+    n_diploids = num_samples // 2
+    num_sites = ts.num_sites
+    positions_all = ts.sites_position.astype("int32")
+    # Process in chunks
+    # Preallocate chunk arrays
+    genotype_buffer = np.empty((chunk_size, n_diploids), dtype=np.int32)
+    for start_idx in range(0, num_sites, chunk_size):
+        end_idx = min(start_idx + chunk_size, num_sites)
+        chunk_len = end_idx - start_idx
+        genotype_chunk = genotype_buffer[:chunk_len]
+        # Decode variants efficiently
+        for i, site_id in enumerate(range(start_idx, end_idx)):
+            variant.decode(site_id)
+            # Convert to diploid genotypes
+            np.add(
+                variant.genotypes[::2], variant.genotypes[1::2], out=genotype_chunk[i]
+            )
+        positions_chunk = positions_all[start_idx:end_idx]
+        stats.update_batch(genotype_chunk, positions_chunk, bins)
     return stats.finalize(bins)

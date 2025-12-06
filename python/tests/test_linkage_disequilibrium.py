@@ -187,3 +187,30 @@ def test_ld_from_tree_sequence():
     mts = msprime.sim_mutations(ts, rate=1e-8)
     res = held.ld_from_tree_sequence(mts, 1e-8)
     assert res.shape == (19, 3), "Should have 3 statistics and 19 bins"
+
+    # Simple function
+    def no_chunk_ld(ts, recombination_rate, bins=None):
+        if bins is None:
+            left_bins = np.arange(0.5, 0.5 * 20, 0.5)
+            right_bins = left_bins + 0.5
+            bins = (left_bins, right_bins)
+        elif len(bins) != 2:
+            raise ValueError("bins must be a tuple of two arrays")
+        elif len(bins[0]) != len(bins[1]):
+            raise ValueError("bins must have the same length")
+        elif np.any(bins[1] <= bins[0]):
+            raise ValueError("bins must be increasing")
+        bins = held.Bins(
+            bins[0] / 100 / recombination_rate, bins[1] / 100 / recombination_rate
+        )
+        n_bins = len(bins)
+        stats = held.StreamingStats(n_bins)
+        genotype_matrix = ts.genotype_matrix()
+        genotype_matrix = genotype_matrix[:, ::2] + genotype_matrix[:, 1::2]
+        positions = ts.sites_position.astype("int32")
+        stats.update_batch(genotype_matrix, positions, bins)
+        return stats.finalize(bins)
+
+    res2 = no_chunk_ld(mts, 1e-8)
+    assert res.shape == res2.shape, "Chunk size should be equivalent"
+    np.testing.assert_allclose(res, res2, rtol=1e-5, atol=1e-8, equal_nan=True)
