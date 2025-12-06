@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::ops::Bound::Included;
 
 // This function computes E[X_iY_iX_jY_j]
+#[inline]
 pub fn linkage_disequilibrium(genotypes1: &[f64], genotypes2: &[f64]) -> f64 {
     let s = genotypes1.len() as f64;
     let (ld, ld_square) = genotypes1.iter().zip(genotypes2.iter()).fold(
@@ -36,12 +37,16 @@ impl Bins {
             right_bins,
         })
     }
-    
+
+    fn __len__(&self) -> usize {
+        self.left_bins.len()
+    }
+
     #[getter]
     fn left_bins(&self) -> Vec<f64> {
         self.left_bins.clone()
     }
-    
+
     #[getter]
     fn right_bins(&self) -> Vec<f64> {
         self.right_bins.clone()
@@ -57,13 +62,21 @@ struct StreamingStats {
 }
 
 impl StreamingStats {
-    fn update_bin(&mut self, index: usize, genotypes1: &[f64], genotypes2: &[f64]) {
+    #[inline]
+    fn update_bin_inline(
+        counts: &mut [usize],
+        ld: &mut [f64],
+        ld_square: &mut [f64],
+        index: usize,
+        genotypes1: &[f64],
+        genotypes2: &[f64],
+    ) {
         let new_value = linkage_disequilibrium(genotypes1, genotypes2);
-        self.counts[index] += 1;
-        let delta = new_value - self.ld[index];
-        self.ld[index] += delta / self.counts[index] as f64;
-        let delta2 = new_value - self.ld[index];
-        self.ld_square[index] += delta * delta2;
+        counts[index] += 1;
+        let delta = new_value - ld[index];
+        ld[index] += delta / counts[index] as f64;
+        let delta2 = new_value - ld[index];
+        ld_square[index] += delta * delta2;
     }
 }
 
@@ -80,23 +93,24 @@ impl RollingMap {
             maf_threshold: 0.25,
         }
     }
+    #[inline]
     fn insert(&mut self, position: i32, genotypes: &[i32]) {
         let position = position as u64;
         // Compute MAF
         let total: i32 = genotypes.iter().sum();
-        let allele_frequency = total as f64 / (2.0 * genotypes.len() as f64);
+        let n = genotypes.len();
+        let n_f64 = n as f64;
+        let allele_frequency = total as f64 / (2.0 * n_f64);
         let maf = allele_frequency.min(1.0 - allele_frequency);
         if maf < self.maf_threshold {
             return;
         }
-        let standarized = genotypes
-            .iter()
-            .map(|&gt| {
-                let gt = gt as f64;
-                (gt - 2.0 * allele_frequency)
-                    / (2.0 * allele_frequency * (1.0 - allele_frequency)).sqrt()
-            })
-            .collect::<Vec<f64>>();
+        let mean = 2.0 * allele_frequency;
+        let std_dev = (2.0 * allele_frequency * (1.0 - allele_frequency)).sqrt();
+        let mut standarized = Vec::with_capacity(n);
+        for &gt in genotypes {
+            standarized.push((gt as f64 - mean) / std_dev);
+        }
         self.map.insert(position, standarized);
     }
 }
@@ -129,53 +143,53 @@ impl StreamingStats {
                 shape[0]
             )));
         }
+
+        let min_distance = *bins.left_bins.first().unwrap();
+        let max_distance = *bins.right_bins.last().unwrap();
+
         // Add rows from the batch
         for i in 0..shape[0] {
             let position = positions[i];
             let row: Vec<i32> = genotypes.row(i).to_vec();
             self.rolling_map.insert(position, &row);
         }
+
         // Iterate over the rolling map
-        let min_distance = bins.left_bins.first().unwrap();
-        let max_distance = bins.right_bins.last().unwrap();
-        while let Some((position1, _)) = self.rolling_map.map.first_key_value() {
-            let position1 = *position1;
+        while let Some((&position1, _)) = self.rolling_map.map.first_key_value() {
             let min_next = (position1 as f64 + min_distance) as u64;
             let max_next = (position1 as f64 + max_distance) as u64;
-            if let Some((last_position, _)) = self.rolling_map.map.last_key_value() {
-                if max_next > *last_position {
+            if let Some((&last_position, _)) = self.rolling_map.map.last_key_value() {
+                if max_next > last_position {
                     break;
                 }
             } else {
                 break;
             }
-            let genotypes1 = self.rolling_map.map.get(&position1).unwrap().clone();
-            self.rolling_map.map.remove(&position1);
-            // Most likely, the first index will be 0 and it's monotically increasing
+            let (_, genotypes1) = self.rolling_map.map.remove_entry(&position1).unwrap();
             let mut bin_index = 0;
-            // Collect positions and genotypes to avoid borrowing issues
-            let pairs: Vec<_> = self
+
+            // Iterate across relevant values directly without collecting
+            for (position2, genotypes2) in self
                 .rolling_map
                 .map
                 .range((Included(&min_next), Included(&max_next)))
-                .map(|(pos, geno)| (*pos, geno.clone()))
-                .collect();
-
-            // Iterate across relevant values
-            for (position2, genotypes2) in pairs {
-                let distance = position2 - position1;
-                while bin_index < bins.left_bins.len()
-                    && (distance as f64) > bins.right_bins[bin_index]
-                {
+            {
+                let distance = (*position2 - position1) as f64;
+                while bin_index < bins.left_bins.len() && distance > bins.right_bins[bin_index] {
                     bin_index += 1;
                 }
                 if bin_index >= bins.left_bins.len() {
                     break;
                 }
-                if (distance as f64) >= bins.left_bins[bin_index]
-                    && (distance as f64) <= bins.right_bins[bin_index]
-                {
-                    self.update_bin(bin_index, &genotypes1, &genotypes2);
+                if distance >= bins.left_bins[bin_index] && distance <= bins.right_bins[bin_index] {
+                    Self::update_bin_inline(
+                        &mut self.counts,
+                        &mut self.ld,
+                        &mut self.ld_square,
+                        bin_index,
+                        &genotypes1,
+                        genotypes2,
+                    );
                 }
             }
         }
@@ -187,38 +201,37 @@ impl StreamingStats {
         py: Python<'py>,
         bins: &Bins,
     ) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        let min_distance = bins.left_bins.first().unwrap();
-        let max_distance = bins.right_bins.last().unwrap();
+        let min_distance = *bins.left_bins.first().unwrap();
+        let max_distance = *bins.right_bins.last().unwrap();
         // We are not gonna get new samples, so we have to finish processing
         while !self.rolling_map.map.is_empty() {
             let (position1, genotypes1) = self.rolling_map.map.pop_first().unwrap();
             let min_next = (position1 as f64 + min_distance) as u64;
             let max_next = (position1 as f64 + max_distance) as u64;
-            // Most likely, the first index will be 0 and it's monotically increasing
             let mut bin_index = 0;
-            // Collect positions and genotypes to avoid borrowing issues
-            let pairs: Vec<_> = self
+
+            // Iterate across relevant values directly without collecting
+            for (position2, genotypes2) in self
                 .rolling_map
                 .map
                 .range((Included(&min_next), Included(&max_next)))
-                .map(|(pos, geno)| (*pos, geno.clone()))
-                .collect();
-
-            // Iterate across relevant values
-            for (position2, genotypes2) in pairs {
-                let distance = position2 - position1;
-                while bin_index < bins.left_bins.len()
-                    && (distance as f64) > bins.right_bins[bin_index]
-                {
+            {
+                let distance = (*position2 - position1) as f64;
+                while bin_index < bins.left_bins.len() && distance > bins.right_bins[bin_index] {
                     bin_index += 1;
                 }
                 if bin_index >= bins.left_bins.len() {
                     break;
                 }
-                if (distance as f64) >= bins.left_bins[bin_index]
-                    && (distance as f64) <= bins.right_bins[bin_index]
-                {
-                    self.update_bin(bin_index, &genotypes1, &genotypes2);
+                if distance >= bins.left_bins[bin_index] && distance <= bins.right_bins[bin_index] {
+                    Self::update_bin_inline(
+                        &mut self.counts,
+                        &mut self.ld,
+                        &mut self.ld_square,
+                        bin_index,
+                        &genotypes1,
+                        genotypes2,
+                    );
                 }
             }
         }

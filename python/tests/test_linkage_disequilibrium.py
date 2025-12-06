@@ -169,3 +169,21 @@ def test_maf_filtering():
     np.testing.assert_allclose(
         result_rust, result_python, rtol=1e-5, atol=1e-8, equal_nan=True
     )
+
+
+def test_ld_from_tree_sequence():
+    import held
+    import msprime
+
+    ts = msprime.sim_ancestry(
+        10, population_size=1000, recombination_rate=1e-8, sequence_length=2e7
+    )
+    res = held.ld_from_tree_sequence(ts, 1e-8)
+    assert res.shape == (19, 3), "Should have 3 statistics and 19 bins"
+    # All values should be nan
+    assert np.isnan(res[:, :2]).all()
+    assert (res[:, 2] == 0).all()
+    # Add mutations
+    mts = msprime.sim_mutations(ts, rate=1e-8)
+    res = held.ld_from_tree_sequence(mts, 1e-8)
+    assert res.shape == (19, 3), "Should have 3 statistics and 19 bins"
