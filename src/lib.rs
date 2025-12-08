@@ -1,4 +1,4 @@
-use numpy::{PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 use std::collections::BTreeMap;
 use std::ops::Bound::Included;
@@ -43,13 +43,13 @@ impl Bins {
     }
 
     #[getter]
-    fn left_bins(&self) -> Vec<f64> {
-        self.left_bins.clone()
+    fn left_bins<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, &self.left_bins)
     }
 
     #[getter]
-    fn right_bins(&self) -> Vec<f64> {
-        self.right_bins.clone()
+    fn right_bins<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, &self.right_bins)
     }
 }
 
