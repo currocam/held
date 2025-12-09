@@ -244,15 +244,15 @@ def expected_ld_piecewise_exponential(
 
     # Numerical integration using pre-computed Legendre quadrature (15 points for time, 10 for bins)
     u_points = jnp.array([gauss(a, b, 10)[0] for (a, b) in zip(u_i, u_j)])
-    u_weights = jnp.array(
-        [gauss(a, b, 10)[1] / (b - a) for (a, b) in zip(u_i, u_j)]
-    )
+    u_weights = jnp.array([gauss(a, b, 10)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
     u_col = u_points.flatten()
 
     # First integral: [0, t0]
     times1 = (t0 - 0) / 2 * _LEGENDRE_X_15 + (t0 + 0) / 2
     f_t_piece1 = S_ut_piece1(alpha, Ne_c, times1, u_col)
-    integral_piece1 = jnp.sum(f_t_piece1 * _LEGENDRE_W_15[:, None] * (t0 - 0) / 2, axis=0)
+    integral_piece1 = jnp.sum(
+        f_t_piece1 * _LEGENDRE_W_15[:, None] * (t0 - 0) / 2, axis=0
+    )
 
     # Second integral: [t0, ∞)
     trans_legendre_x = 0.5 * _LEGENDRE_X_15 + 0.5

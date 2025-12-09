@@ -232,24 +232,36 @@ def test_simulation_api():
         num_chromosomes=3,
         num_workers=1,
     )
-    
+
     # Check data is a dictionary
     assert isinstance(data, dict), "Result should be a dictionary"
-    
+
     # Check required keys
-    required_keys = ["mean", "std", "left_bins", "right_bins", "sample_size", "num_chromosomes", "data"]
+    required_keys = [
+        "mean",
+        "std",
+        "left_bins",
+        "right_bins",
+        "sample_size",
+        "num_chromosomes",
+        "data",
+    ]
     for key in required_keys:
         assert key in data, f"Missing key: {key}"
-    
+
     # Get length of bins
     n_bins = len(data["left_bins"])
-    assert len(data["right_bins"]) == n_bins, "left_bins and right_bins should have same length"
+    assert len(data["right_bins"]) == n_bins, (
+        "left_bins and right_bins should have same length"
+    )
     assert data["mean"].shape == (n_bins,), "mean should be a n_bins vector"
     assert data["std"].shape == (n_bins,), "std should be a n_bins vector"
-    assert data["data"].shape == (3, n_bins), "data should be a (num_chromosomes, n_bins) matrix"
+    assert data["data"].shape == (3, n_bins), (
+        "data should be a (num_chromosomes, n_bins) matrix"
+    )
     assert data["sample_size"] == 20, "sample_size should match input"
     assert data["num_chromosomes"] == 3, "num_chromosomes should match input"
-    
+
     # Test 2: Parallel execution
     data_parallel = held.simulate_from_msprime(
         demography=demo,
@@ -262,18 +274,24 @@ def test_simulation_api():
         num_workers=2,
         progress_bar=False,
     )
-    
+
     # Parallel execution should also produce valid results
-    assert data_parallel["mean"].shape == (n_bins,), "Parallel mean should be a n_bins vector"
-    assert data_parallel["num_chromosomes"] == 3, "Parallel num_chromosomes should match"
-    assert data_parallel["data"].shape == (3, n_bins), "Parallel data should be (num_chromosomes, n_bins)"
-    
+    assert data_parallel["mean"].shape == (n_bins,), (
+        "Parallel mean should be a n_bins vector"
+    )
+    assert data_parallel["num_chromosomes"] == 3, (
+        "Parallel num_chromosomes should match"
+    )
+    assert data_parallel["data"].shape == (3, n_bins), (
+        "Parallel data should be (num_chromosomes, n_bins)"
+    )
+
     # Verify mean is computed correctly from raw data
     np.testing.assert_allclose(
         data["mean"], data["data"].mean(axis=0), rtol=1e-10, equal_nan=True
     )
-    
-    # Test 3: Custom bins  
+
+    # Test 3: Custom bins
     custom_left = np.array([0.5, 1.5, 3.0])
     custom_right = np.array([1.5, 3.0, 5.0])
     data_custom = held.simulate_from_msprime(
@@ -289,8 +307,10 @@ def test_simulation_api():
         num_workers=1,
         progress_bar=False,
     )
-    
+
     assert len(data_custom["mean"]) == 3, "Should have 3 bins"
     # Bins are in cM (input cM -> bp -> back to cM via * recombination_rate * 100)
     np.testing.assert_allclose(data_custom["left_bins"], custom_left / 100, rtol=1e-10)
-    np.testing.assert_allclose(data_custom["right_bins"], custom_right / 100, rtol=1e-10)
+    np.testing.assert_allclose(
+        data_custom["right_bins"], custom_right / 100, rtol=1e-10
+    )
