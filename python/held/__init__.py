@@ -176,6 +176,102 @@ def expected_ld_constant(population_size, left_bins, right_bins, sample_size=Non
     return mu
 
 
+# Pre-compute quadrature rules for expected_ld_piecewise_exponential
+_LEGENDRE_X_15, _LEGENDRE_W_15 = np.polynomial.legendre.leggauss(15)
+_LEGENDRE_X_15 = jnp.asarray(_LEGENDRE_X_15)
+_LEGENDRE_W_15 = jnp.asarray(_LEGENDRE_W_15)
+
+
+@jax.jit
+def expected_ld_piecewise_exponential(
+    Ne_c,
+    Ne_a,
+    t0,
+    alpha,
+    left_bins,
+    right_bins,
+    sample_size=None,
+):
+    """
+    Compute expected LD (E[X_iX_jY_iY_j]) under a two-phase exponential demography.
+
+    Args:
+        Ne_c (float): Contemporary diploid effective population size.
+        Ne_a (float): Ancestral diploid effective population size.
+        t0 (float): Time of transition from exponential to constant phase.
+        alpha (float): Rate of change of Ne during the exponential phase.
+        left_bins (array-like): Left distances for SNP pairs.
+        right_bins (array-like): Right distances for SNP pairs.
+        sample_size (int, optional): Number of diploid individuals. If provided, applies finite sample correction.
+
+    Returns:
+        array: Expected LD values across SNP distance bins.
+    """
+    u_i = jnp.asarray(left_bins)
+    u_j = jnp.asarray(right_bins)
+
+    def S_ut_piece1(alpha, Ne1, t, u):
+        t = t[:, None]
+        u = u[None, :]
+        epsilon = 1e-5
+        # If alpha is not close to zero
+        inner1 = (1 - jnp.exp(alpha * t)) / (2 * Ne1 * alpha)
+        exponent1 = alpha * t - 2 * t * u + inner1
+        res1 = jnp.exp(exponent1) / (2 * Ne1)
+        # If alpha is close to zero we use Taylor series
+        numerator = 4 * Ne1 + alpha * t * (4 * Ne1 - t)
+        exponent2 = -t * (4 * Ne1 * u + 1) / (2 * Ne1)
+        res2 = numerator * jnp.exp(exponent2) / (8 * Ne1**2)
+        return jnp.where(jnp.abs(alpha) < epsilon, res2, res1)
+
+    def S_ut_piece2(alpha, Ne1, Ne2, t0, t, u):
+        t = t[:, None]
+        u = u[None, :]
+        epsilon = 1e-5
+        # If alpha is not close to zero
+        inner1 = (Ne1 * alpha * (t0 - t) + Ne2 * (1 - jnp.exp(alpha * t0))) / (
+            2 * Ne1 * Ne2 * alpha
+        )
+        exponent1 = -2 * t * u + inner1
+        res1 = jnp.exp(exponent1) / (2 * Ne2)
+        # If alpha is close to zero we use Taylor series
+        inner2 = 4 * Ne1 - alpha * t0**2
+        exponent2 = (-4 * Ne1 * Ne2 * t * u + Ne1 * (t0 - t) - Ne2 * t0) / (
+            2 * Ne1 * Ne2
+        )
+        res2 = inner2 * jnp.exp(exponent2) / (8 * Ne1 * Ne2)
+        return jnp.where(jnp.abs(alpha) < epsilon, res2, res1)
+
+    # Numerical integration using pre-computed Legendre quadrature (15 points for time, 10 for bins)
+    u_points = jnp.array([gauss(a, b, 10)[0] for (a, b) in zip(u_i, u_j)])
+    u_weights = jnp.array(
+        [gauss(a, b, 10)[1] / (b - a) for (a, b) in zip(u_i, u_j)]
+    )
+    u_col = u_points.flatten()
+
+    # First integral: [0, t0]
+    times1 = (t0 - 0) / 2 * _LEGENDRE_X_15 + (t0 + 0) / 2
+    f_t_piece1 = S_ut_piece1(alpha, Ne_c, times1, u_col)
+    integral_piece1 = jnp.sum(f_t_piece1 * _LEGENDRE_W_15[:, None] * (t0 - 0) / 2, axis=0)
+
+    # Second integral: [t0, ∞)
+    trans_legendre_x = 0.5 * _LEGENDRE_X_15 + 0.5
+    trans_legendre_w = 0.5 * _LEGENDRE_W_15
+    times2 = t0 + trans_legendre_x / (1 - trans_legendre_x)
+    f_t_piece2 = S_ut_piece2(alpha, Ne_c, Ne_a, t0, times2, u_col)
+    integral_piece2 = jnp.sum(
+        f_t_piece2 * (trans_legendre_w[:, None] / (1 - trans_legendre_x)[:, None] ** 2),
+        axis=0,
+    )
+
+    res_flat = integral_piece1 + integral_piece2
+    res_matrix = res_flat.reshape(u_points.shape)
+    res_per_bin = jnp.sum(res_matrix * u_weights, axis=1)
+    if sample_size is not None:
+        return correct_ld_finite_sample(res_per_bin, sample_size)
+    return res_per_bin
+
+
 def _process_chromosome_worker(args: Tuple) -> NDArray:
     """Worker function for parallel chromosome simulation."""
     import msprime
