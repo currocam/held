@@ -20,8 +20,8 @@ __generated_with = "0.18.3"
 # Initialization code that runs before all other cells
 import matplotlib
 import matplotlib.pyplot as plt
-import scienceplots
-plt.style.use('science')
+
+plt.style.use("science")
 matplotlib.rcParams.update(
     {
         "pgf.texsystem": "pdflatex",
@@ -33,18 +33,18 @@ matplotlib.rcParams.update(
 
 # Aesthetics
 textwidth = 3.31314
-aspect_ratio = 6/8
+aspect_ratio = 6 / 8
 scale = 1.0
 width = textwidth * scale
 height = width * aspect_ratio
 
 # %%
 import seaborn as sns
-import numpy as np
 import pandas as pd
+import sys
 
 # %%
-df = pd.read_csv("results/tables/00-benchmark_ld_compute.csv")
+df = pd.read_csv(sys.stdin)
 df = df[df["n_samples"] > 10]
 df
 

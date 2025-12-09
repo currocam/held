@@ -1,10 +1,10 @@
 #!/usr/bin/env -S uv -n run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.12,<3.13"
 # dependencies = [
 #     "held",
-#     "msprime",
-#     "pandas",
+#     "msprime==1.3.4",
+#     "pandas==2.3.3",
 # ]
 #
 # [tool.uv.sources]
