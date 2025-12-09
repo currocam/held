@@ -18,6 +18,7 @@ __generated_with = "0.18.3"
 
 # %%
 # Initialization code that runs before all other cells
+import scienceplots
 import matplotlib
 import matplotlib.pyplot as plt
 

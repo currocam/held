@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 NUM_WORKERS = 8
-RANDOM_SEED = 1761846837
+RANDOM_SEED = 237273
 RECOMBINATION_RATE = 1e-8
 SEQUENCE_LENGTH = int(2e8)
 NUM_CHROMOSOMES = 50  # simulate 50 independent chromosomes
@@ -89,8 +89,9 @@ def worker(args):
     )[:, 0]
 
 
-def analysis(Ne):
-    demo = msprime.Demography.isolated_model([Ne])
+def analysis(Ne_c, Ne_a, t0, alpha):
+    demo = msprime.Demography.isolated_model([Ne_c], growth_rate=[alpha])
+    demo.add_population_parameters_change(time=t0, initial_size=Ne_a, growth_rate=0)
     demes_graph = demo.to_demes()
     import multiprocess as mp
 
@@ -134,8 +135,11 @@ def analysis(Ne):
         "demes": demo.to_demes(),
     }
     # Prediction from theory
-    data["predictions"] = held.expected_ld_constant(
-        population_size=Ne,
+    data["predictions"] = held.expected_ld_piecewise_exponential(
+        Ne_c=Ne_c,
+        Ne_a=Ne_a,
+        t0=t0,
+        alpha=alpha,
         left_bins=data["left_bins"],
         right_bins=data["right_bins"],
         sample_size=SAMPLE_SIZE,
@@ -145,9 +149,12 @@ def analysis(Ne):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("Ne", type=int, help="Effective population size")
+    parser.add_argument("Ne_c", type=float, help="Current effective population size")
+    parser.add_argument("Ne_a", type=float, help="Ancestral effective population size")
+    parser.add_argument("t0", type=float, help="Time of population size change")
     parser.add_argument("outfile", type=str, help="Output pickle file")
     args = parser.parse_args()
 
-    result = analysis(args.Ne)
+    alpha = (np.log(args.Ne_c) - np.log(args.Ne_a)) / args.t0
+    result = analysis(args.Ne_c, args.Ne_a, args.t0, alpha)
     pd.to_pickle(result, args.outfile)
