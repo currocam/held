@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from numpy.typing import NDArray
-
+from jax.scipy.special import exp1
 from . import held
 from .ld import _construct_bins
 
@@ -259,6 +259,199 @@ def expected_ld_piecewise_constant(
     res_matrix = total_integral.reshape(u_points.shape)
     res_per_bin = jnp.sum(res_matrix * u_weights, axis=1)
 
+    if sample_size is not None:
+        return correct_ld_finite_sample(res_per_bin, sample_size)
+    return res_per_bin
+
+
+@jax.jit
+def expected_ld_secondary_introduction(
+    Ne_c,
+    Ne_f,
+    Ne_a,
+    t0,
+    t1,
+    migration_rate,
+    left_bins,
+    right_bins,
+    sample_size=None,
+):
+    """
+    Compute expected LD (E[X_iX_jY_iY_j]) under a three-phase island model with migration.
+
+    Args:
+        Ne_c (float): Contemporary diploid effective population size (migration activated).
+        Ne_f (float): Intermediate diploid effective population size (migration activated).
+        Ne_a (float): Ancestral diploid effective population size (no migration).
+        t0 (float): Time of transition from contemporary to migration phase.
+        t1 (float): Time of transition from migration to ancestral phase.
+        migration_rate (float): Migration rate during the intermediate phase.
+        left_bins (array-like): Left distances for SNP pairs.
+        right_bins (array-like): Right distances for SNP pairs.
+        sample_size (int, optional): Number of diploid individuals. If provided, applies finite sample correction.
+
+    Returns:
+        array: Expected LD values across SNP distance bins.
+    """
+    # Prepare quadrature for u
+    u_i = jnp.asarray(left_bins)
+    u_j = jnp.asarray(right_bins)
+    # Some boiler-plate to avoid modifying the monster below as much as possible
+    Nec, Nef, Nea, T1, T2, m = Ne_c, Ne_f, Ne_a, t0, t1, migration_rate
+    res_per_bin = (
+        8
+        * (
+            -(Nea * Nec * m - Nec / 4 + Nea / 4)
+            * (
+                exp1(T2 * (4 * Nea * u_i + 1) / Nea / 2)
+                - exp1(T2 * (4 * Nea * u_j + 1) / Nea / 2)
+            )
+            * Nef
+            * (Nea * Nef * m + Nef**2 * m + Nea / 2 - Nef / 2)
+            * (Nec * m + 0.1e1 / 0.2e1)
+            * Nec
+            * (Nea * m - 0.1e1 / 0.2e1)
+            * jnp.exp(
+                (
+                    ((-4 * Nef * T2 * m + T1 - T2) * Nec - Nef * T1) * Nea
+                    + T2 * Nec * Nef
+                )
+                / Nea
+                / Nec
+                / Nef
+                / 2
+            )
+            - 2
+            * (Nec - Nef)
+            * (Nea * Nec * m - Nec / 4 + Nea / 4)
+            * (
+                exp1(T2 * (4 * Nea * u_i + 1) / Nea / 2)
+                - exp1(T2 * (4 * Nea * u_j + 1) / Nea / 2)
+            )
+            * Nef
+            * (Nea * Nef * m + Nea / 4 - Nef / 4)
+            * m
+            * Nec
+            * jnp.exp(
+                ((-2 * m * (T1 + T2) * Nec - T1) * Nea + T2 * Nec) / Nec / Nea / 2
+            )
+            + (Nec - Nef)
+            * (
+                exp1(T1 * (4 * Nea * u_i + 1) / Nea / 2)
+                - exp1(T1 * (4 * Nea * u_j + 1) / Nea / 2)
+            )
+            * Nea**3
+            * (m * Nef + 0.1e1 / 0.2e1)
+            * Nef
+            * m**2
+            * (Nec * m + 0.1e1 / 0.2e1)
+            * Nec
+            * jnp.exp(-T1 * (4 * Nea * Nec * m + Nea - Nec) / Nec / Nea / 2)
+            - 4
+            * Nea
+            * (Nea * Nec * m - Nec / 4 + Nea / 4)
+            * (
+                exp1(2 * T1 * (0.1e1 / 0.4e1 + (m + u_i) * Nef) / Nef)
+                - exp1(2 * T1 * (0.1e1 / 0.4e1 + (m + u_j) * Nef) / Nef)
+                - exp1(2 * T2 * (0.1e1 / 0.4e1 + (m + u_i) * Nef) / Nef)
+                + exp1(2 * T2 * (0.1e1 / 0.4e1 + (m + u_j) * Nef) / Nef)
+            )
+            * (m * Nef + 0.1e1 / 0.4e1)
+            * (Nea * Nef * m + Nef**2 * m + Nea / 2 - Nef / 2)
+            * (Nec * m + 0.1e1 / 0.2e1)
+            * Nec
+            * (Nea * m - 0.1e1 / 0.2e1)
+            * jnp.exp((Nec - Nef) / Nef / Nec * T1 / 2)
+            + 8
+            * Nef
+            * (Nea * Nef * m + Nea / 4 - Nef / 4)
+            * (
+                Nea
+                * (m * Nef + 0.1e1 / 0.2e1)
+                * (Nec * m + 0.1e1 / 0.4e1)
+                * ((Nec * m + 0.1e1 / 0.2e1) * Nea + Nec**2 * m - Nec / 2)
+                * (Nea * m - 0.1e1 / 0.2e1)
+                * exp1(2 * T1 * (0.1e1 / 0.4e1 + (m + u_i) * Nec) / Nec)
+                / 2
+                - Nea
+                * (m * Nef + 0.1e1 / 0.2e1)
+                * (Nec * m + 0.1e1 / 0.4e1)
+                * ((Nec * m + 0.1e1 / 0.2e1) * Nea + Nec**2 * m - Nec / 2)
+                * (Nea * m - 0.1e1 / 0.2e1)
+                * exp1(2 * T1 * (0.1e1 / 0.4e1 + (m + u_j) * Nec) / Nec)
+                / 2
+                + jnp.exp(-T2 * (2 * Nea * m - 1) / Nea / 2)
+                * (Nea * Nec * m - Nec / 4 + Nea / 4)
+                * (m * Nef + 0.1e1 / 0.2e1)
+                * m
+                * Nec**2
+                * exp1(T2 * (4 * Nea * u_i + 1) / Nea / 2)
+                / 2
+                - jnp.exp(-T2 * (2 * Nea * m - 1) / Nea / 2)
+                * (Nea * Nec * m - Nec / 4 + Nea / 4)
+                * (m * Nef + 0.1e1 / 0.2e1)
+                * m
+                * Nec**2
+                * exp1(T2 * (4 * Nea * u_j + 1) / Nea / 2)
+                / 2
+                + (
+                    -(Nec - Nef)
+                    * (Nea * Nec * m - Nec / 4 + Nea / 4)
+                    * (
+                        exp1(T1 * (m + 2 * u_i))
+                        - exp1(T1 * (m + 2 * u_j))
+                        - exp1(T2 * (m + 2 * u_i))
+                        + exp1(T2 * (m + 2 * u_j))
+                    )
+                    * m**2
+                    * Nec
+                    * jnp.exp(-T1 * (2 * Nec * m + 1) / Nec / 2)
+                    / 2
+                    + (m * Nef + 0.1e1 / 0.2e1)
+                    * (
+                        (Nec * m + 0.1e1 / 0.4e1)
+                        * ((Nec * m + 0.1e1 / 0.2e1) * Nea + Nec**2 * m - Nec / 2)
+                        * (Nea * m - 0.1e1 / 0.2e1)
+                        * jnp.log(1 + (4 * m + 4 * u_i) * Nec)
+                        / 2
+                        - (Nec * m + 0.1e1 / 0.4e1)
+                        * ((Nec * m + 0.1e1 / 0.2e1) * Nea + Nec**2 * m - Nec / 2)
+                        * (Nea * m - 0.1e1 / 0.2e1)
+                        * jnp.log(1 + (4 * m + 4 * u_j) * Nec)
+                        / 2
+                        + (
+                            (Nec / 4 - Nea * Nec * m - Nea / 4)
+                            * exp1(T2 * (m + 2 * u_i))
+                            + (Nea * Nec * m - Nec / 4 + Nea / 4)
+                            * exp1(T2 * (m + 2 * u_j))
+                            + Nea
+                            * (Nec * m + 0.1e1 / 0.2e1)
+                            * jnp.log(4 * Nea * u_i + 1)
+                            / 2
+                            + Nea
+                            * (-Nec * m - 0.1e1 / 0.2e1)
+                            * jnp.log(4 * Nea * u_j + 1)
+                            / 2
+                            + (jnp.log(m + 2 * u_j) - jnp.log(m + 2 * u_i))
+                            * (Nea * Nec * m - Nec / 4 + Nea / 4)
+                        )
+                        * m**2
+                        * Nec**2
+                    )
+                )
+                * Nea
+            )
+        )
+        / Nec
+        / Nea
+        / Nef
+        / (2 * Nea * m - 1)
+        / (4 * Nea * Nec * m + Nea - Nec)
+        / (2 * m * Nef + 1)
+        / (4 * Nea * Nef * m + Nea - Nef)
+        / (2 * Nec * m + 1)
+        / (-u_j + u_i)
+    )
     if sample_size is not None:
         return correct_ld_finite_sample(res_per_bin, sample_size)
     return res_per_bin

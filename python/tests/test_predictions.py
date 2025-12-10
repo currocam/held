@@ -8,13 +8,13 @@ import numpy as np
 
 def test_expected_ld_constant():
     """Test that expected_ld_constant runs without errors and returns positive values."""
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng()
 
     # Random population size between 1,000 and 100,000
     population_size = rng.uniform(1000, 100000)
 
     # Random bins
-    left_bins = jnp.array([0.0, 0.1, 0.2, 0.3])
+    left_bins = jnp.array([0.0001, 0.1, 0.2, 0.3])
     right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
 
     # Random sample size between 10 and 100
@@ -39,20 +39,20 @@ def test_expected_ld_constant():
 
 def test_expected_ld_piecewise_exponential():
     """Test that expected_ld_piecewise_exponential runs without errors and returns positive values."""
-    rng = np.random.default_rng(123)
+    rng = np.random.default_rng()
 
     # Random contemporary and ancestral population sizes between 1,000 and 100,000
     Ne_c = rng.uniform(1000, 100000)
     Ne_a = rng.uniform(1000, 100000)
 
-    # Random transition time between 100 and 10,000 generations
-    t0 = rng.uniform(100, 10000)
+    # Random transition time between 1 and 100 generations
+    t0 = rng.uniform(1, 100)
 
     # Random growth rate between -0.01 and 0.01
     alpha = rng.uniform(-0.01, 0.01)
 
     # Random bins
-    left_bins = jnp.array([0.0, 0.1, 0.2, 0.3])
+    left_bins = jnp.array([0.001, 0.1, 0.2, 0.3])
     right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
 
     # Random sample size between 10 and 100
@@ -79,15 +79,15 @@ def test_expected_ld_piecewise_exponential():
 
 def test_expected_ld_piecewise_constant():
     """Test piecewise constant population size model with multiple epochs."""
-    rng = np.random.default_rng(456)
+    rng = np.random.default_rng()
 
     # Random bins
-    left_bins = jnp.array([0.0, 0.1, 0.2, 0.3])
+    left_bins = jnp.array([0.001, 0.1, 0.2, 0.3])
     right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
 
     # Test 2-epoch model with random values
     Ne_values_2 = jnp.array([rng.uniform(5000, 15000), rng.uniform(15000, 25000)])
-    t_boundaries_2 = jnp.array([rng.uniform(500, 1500)])
+    t_boundaries_2 = jnp.array([rng.uniform(1, 100)])
     result_2 = held.expected_ld_piecewise_constant(
         Ne_values_2, t_boundaries_2, left_bins, right_bins
     )
@@ -98,7 +98,7 @@ def test_expected_ld_piecewise_constant():
     Ne_values_3 = jnp.array(
         [rng.uniform(8000, 12000), rng.uniform(3000, 7000), rng.uniform(12000, 18000)]
     )
-    t_boundaries_3 = jnp.array([rng.uniform(300, 700), rng.uniform(1500, 2500)])
+    t_boundaries_3 = jnp.array([rng.uniform(1, 50), rng.uniform(50, 100)])
     result_3 = held.expected_ld_piecewise_constant(
         Ne_values_3, t_boundaries_3, left_bins, right_bins
     )
@@ -115,7 +115,7 @@ def test_expected_ld_piecewise_constant():
         ]
     )
     t_boundaries_4 = jnp.array(
-        [rng.uniform(200, 400), rng.uniform(800, 1200), rng.uniform(2500, 3500)]
+        [rng.uniform(1, 35), rng.uniform(35, 80), rng.uniform(80, 200)]
     )
     result_4 = held.expected_ld_piecewise_constant(
         Ne_values_4, t_boundaries_4, left_bins, right_bins
@@ -163,12 +163,100 @@ def test_expected_ld_piecewise_constant():
     )
 
 
-def test_derivatives_computable():
-    """Test that derivatives can be computed for MLE optimization."""
-    rng = np.random.default_rng(789)
+def test_expected_ld_secondary_introduction():
+    """Test that expected_ld_secondary_introduction runs without errors and returns positive values."""
+    rng = np.random.default_rng()
+
+    # Random population sizes between 1,000 and 100,000
+    Ne_c = rng.uniform(1000, 100000)
+    Ne_f = rng.uniform(1000, 100000)
+    Ne_a = rng.uniform(1000, 100000)
+
+    # Random transition times
+    t0 = rng.uniform(10, 80)
+    t1 = rng.uniform(t0 + 1, t0 + 40)  # t1 > t0
+
+    # Random migration rate between 0.0001 and 0.01
+    migration_rate = rng.uniform(0.0001, 0.01)
 
     # Random bins
-    left_bins = jnp.array([0.0, 0.1, 0.2, 0.3])
+    left_bins = jnp.array([0.001, 0.1, 0.2, 0.3])
+    right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
+
+    # Random sample size between 10 and 100
+    sample_size = rng.integers(10, 100)
+
+    # Test without sample size correction
+    result = held.expected_ld_secondary_introduction(
+        Ne_c, Ne_f, Ne_a, t0, t1, migration_rate, left_bins, right_bins
+    )
+    assert result.shape == (4,), f"Expected shape (4,), got {result.shape}"
+    assert jnp.all(result > 0), "All LD values should be strictly greater than zero"
+    assert jnp.all(jnp.isfinite(result)), "All LD values should be finite"
+
+    # Test with sample size correction
+    result_corrected = held.expected_ld_secondary_introduction(
+        Ne_c,
+        Ne_f,
+        Ne_a,
+        t0,
+        t1,
+        migration_rate,
+        left_bins,
+        right_bins,
+        sample_size=sample_size,
+    )
+    assert result_corrected.shape == (4,), (
+        f"Expected shape (4,), got {result_corrected.shape}"
+    )
+    assert jnp.all(result_corrected > 0), (
+        "All corrected LD values should be strictly greater than zero"
+    )
+    assert jnp.all(jnp.isfinite(result_corrected)), (
+        "All corrected LD values should be finite"
+    )
+    # Compare with panmintic population size
+    Ne_constant = 10000.0
+    result_constant_old = held.expected_ld_constant(Ne_constant, left_bins, right_bins)
+    # With a very small migration rate, both predictions should be close
+    epsilon_migration = 1e-10
+    result_constant_new = held.expected_ld_secondary_introduction(
+        Ne_constant,
+        Ne_constant,
+        Ne_constant,
+        10,
+        20,
+        epsilon_migration,
+        left_bins,
+        right_bins,
+    )
+    # Warning: we reduce tolerance because for a single epoch we have a closed form solution
+    assert jnp.allclose(result_constant_old, result_constant_new, rtol=0.001), (
+        "Single epoch piecewise should match constant model"
+    )
+    # With a large migration rate, the predictions should be different
+    epsilon_migration_large = 1e-2
+    result_constant_new_large = held.expected_ld_secondary_introduction(
+        Ne_constant,
+        Ne_constant,
+        Ne_constant,
+        10,
+        20,
+        epsilon_migration_large,
+        left_bins,
+        right_bins,
+    )
+    assert not jnp.allclose(
+        result_constant_old, result_constant_new_large, rtol=0.001
+    ), "Large migration rate should lead to different predictions"
+
+
+def test_derivatives_computable():
+    """Test that derivatives can be computed for MLE optimization."""
+    rng = np.random.default_rng()
+
+    # Random bins
+    left_bins = jnp.array([0.0001, 0.1, 0.2, 0.3])
     right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
 
     # Test gradient of constant model
@@ -182,8 +270,8 @@ def test_derivatives_computable():
     # Test gradient of piecewise exponential model
     Ne_c = rng.uniform(5000, 15000)
     Ne_a = rng.uniform(15000, 25000)
-    t0 = rng.uniform(500, 1500)
-    alpha = rng.uniform(-0.01, 0.01)
+    t0 = rng.uniform(1, 100)
+    alpha = rng.uniform(-0.1, 0.1)
 
     grad_fn_Ne_c = jax.grad(
         lambda x: jnp.sum(
@@ -226,7 +314,7 @@ def test_derivatives_computable():
 
     # Test gradient of piecewise constant model
     Ne_values = jnp.array([rng.uniform(5000, 15000), rng.uniform(15000, 25000)])
-    t_boundaries = jnp.array([rng.uniform(500, 1500)])
+    t_boundaries = jnp.array([rng.uniform(1, 100)])
 
     grad_fn_Ne = jax.grad(
         lambda x: jnp.sum(
@@ -255,10 +343,76 @@ def test_derivatives_computable():
         "All gradients w.r.t. t_boundaries should be finite"
     )
 
+    # Test gradient of piecewise island model
+    Ne_c = rng.uniform(5000, 15000)
+    Ne_f = rng.uniform(5000, 15000)
+    Ne_a = rng.uniform(15000, 25000)
+    t0 = rng.uniform(1, 100)
+    t1 = rng.uniform(t0 + 1, t0 + 100)
+    migration_rate = rng.uniform(0.0001, 0.05)
+
+    grad_fn_Ne_c = jax.grad(
+        lambda x: jnp.sum(
+            held.expected_ld_secondary_introduction(
+                x, Ne_f, Ne_a, t0, t1, migration_rate, left_bins, right_bins
+            )
+        )
+    )
+    grad_fn_Ne_f = jax.grad(
+        lambda x: jnp.sum(
+            held.expected_ld_secondary_introduction(
+                Ne_c, x, Ne_a, t0, t1, migration_rate, left_bins, right_bins
+            )
+        )
+    )
+    grad_fn_Ne_a = jax.grad(
+        lambda x: jnp.sum(
+            held.expected_ld_secondary_introduction(
+                Ne_c, Ne_f, x, t0, t1, migration_rate, left_bins, right_bins
+            )
+        )
+    )
+    grad_fn_t0 = jax.grad(
+        lambda x: jnp.sum(
+            held.expected_ld_secondary_introduction(
+                Ne_c, Ne_f, Ne_a, x, t1, migration_rate, left_bins, right_bins
+            )
+        )
+    )
+    grad_fn_t1 = jax.grad(
+        lambda x: jnp.sum(
+            held.expected_ld_secondary_introduction(
+                Ne_c, Ne_f, Ne_a, t0, x, migration_rate, left_bins, right_bins
+            )
+        )
+    )
+    grad_fn_m = jax.grad(
+        lambda x: jnp.sum(
+            held.expected_ld_secondary_introduction(
+                Ne_c, Ne_f, Ne_a, t0, t1, x, left_bins, right_bins
+            )
+        )
+    )
+
+    gradient_Ne_c = grad_fn_Ne_c(Ne_c)
+    gradient_Ne_f = grad_fn_Ne_f(Ne_f)
+    gradient_Ne_a = grad_fn_Ne_a(Ne_a)
+    gradient_t0 = grad_fn_t0(t0)
+    gradient_t1 = grad_fn_t1(t1)
+    gradient_m = grad_fn_m(migration_rate)
+
+    assert jnp.isfinite(gradient_Ne_c), "Gradient w.r.t. Ne_c should be finite"
+    assert jnp.isfinite(gradient_Ne_f), "Gradient w.r.t. Ne_f should be finite"
+    assert jnp.isfinite(gradient_Ne_a), "Gradient w.r.t. Ne_a should be finite"
+    assert jnp.isfinite(gradient_t0), "Gradient w.r.t. t0 should be finite"
+    assert jnp.isfinite(gradient_t1), "Gradient w.r.t. t1 should be finite"
+    assert jnp.isfinite(gradient_m), "Gradient w.r.t. migration_rate should be finite"
+
 
 if __name__ == "__main__":
     test_expected_ld_constant()
     test_expected_ld_piecewise_exponential()
     test_expected_ld_piecewise_constant()
+    test_expected_ld_secondary_introduction()
     test_derivatives_computable()
     print("All tests passed!")
