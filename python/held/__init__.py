@@ -40,7 +40,7 @@ def _construct_bins(
 
 
 # Helper function to re-scale Legendre Gaussian quadrature rules
-def gauss(a, b, n=10):
+def gauss(a, b, n=100):
     """
     Compute nodes and weights for Gaussian quadrature over [a, b].
 
@@ -177,9 +177,9 @@ def expected_ld_constant(population_size, left_bins, right_bins, sample_size=Non
 
 
 # Pre-compute quadrature rules for expected_ld_piecewise_exponential
-_LEGENDRE_X_15, _LEGENDRE_W_15 = np.polynomial.legendre.leggauss(15)
-_LEGENDRE_X_15 = jnp.asarray(_LEGENDRE_X_15)
-_LEGENDRE_W_15 = jnp.asarray(_LEGENDRE_W_15)
+_LEGENDRE_X_300, _LEGENDRE_W_300 = np.polynomial.legendre.leggauss(300)
+_LEGENDRE_X_300 = jnp.asarray(_LEGENDRE_X_300)
+_LEGENDRE_W_300 = jnp.asarray(_LEGENDRE_W_300)
 
 
 @jax.jit
@@ -243,20 +243,20 @@ def expected_ld_piecewise_exponential(
         return jnp.where(jnp.abs(alpha) < epsilon, res2, res1)
 
     # Numerical integration using pre-computed Legendre quadrature (15 points for time, 10 for bins)
-    u_points = jnp.array([gauss(a, b, 10)[0] for (a, b) in zip(u_i, u_j)])
-    u_weights = jnp.array([gauss(a, b, 10)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
+    u_points = jnp.array([gauss(a, b, 100)[0] for (a, b) in zip(u_i, u_j)])
+    u_weights = jnp.array([gauss(a, b, 100)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
     u_col = u_points.flatten()
 
     # First integral: [0, t0]
-    times1 = (t0 - 0) / 2 * _LEGENDRE_X_15 + (t0 + 0) / 2
+    times1 = (t0 - 0) / 2 * _LEGENDRE_X_300 + (t0 + 0) / 2
     f_t_piece1 = S_ut_piece1(alpha, Ne_c, times1, u_col)
     integral_piece1 = jnp.sum(
-        f_t_piece1 * _LEGENDRE_W_15[:, None] * (t0 - 0) / 2, axis=0
+        f_t_piece1 * _LEGENDRE_W_300[:, None] * (t0 - 0) / 2, axis=0
     )
 
     # Second integral: [t0, ∞)
-    trans_legendre_x = 0.5 * _LEGENDRE_X_15 + 0.5
-    trans_legendre_w = 0.5 * _LEGENDRE_W_15
+    trans_legendre_x = 0.5 * _LEGENDRE_X_300 + 0.5
+    trans_legendre_w = 0.5 * _LEGENDRE_W_300
     times2 = t0 + trans_legendre_x / (1 - trans_legendre_x)
     f_t_piece2 = S_ut_piece2(alpha, Ne_c, Ne_a, t0, times2, u_col)
     integral_piece2 = jnp.sum(
@@ -267,6 +267,102 @@ def expected_ld_piecewise_exponential(
     res_flat = integral_piece1 + integral_piece2
     res_matrix = res_flat.reshape(u_points.shape)
     res_per_bin = jnp.sum(res_matrix * u_weights, axis=1)
+    if sample_size is not None:
+        return correct_ld_finite_sample(res_per_bin, sample_size)
+    return res_per_bin
+
+
+@jax.jit
+def expected_ld_piecewise_constant(
+    Ne_values,
+    t_boundaries,
+    left_bins,
+    right_bins,
+    sample_size=None,
+):
+    """
+    Compute expected LD (E[X_iX_jY_iY_j]) under a multi-epoch constant population size model.
+
+    Args:
+        Ne_values (array-like): Population sizes for each epoch. Shape: (n_epochs,)
+        t_boundaries (array-like): Time boundaries between epochs. Shape: (n_epochs-1,)
+            The first epoch runs from 0 to t_boundaries[0], second from t_boundaries[0] to t_boundaries[1], etc.
+            The last epoch runs from t_boundaries[-1] to infinity.
+        left_bins (array-like): Left distances for SNP pairs.
+        right_bins (array-like): Right distances for SNP pairs.
+        sample_size (int, optional): Number of diploid individuals. If provided, applies finite sample correction.
+
+    Returns:
+        array: Expected LD values across SNP distance bins.
+
+    Examples:
+        >>> # Two-epoch model: Ne=10000 from 0-1000 generations, Ne=5000 thereafter
+        >>> Ne_values = jnp.array([10000.0, 5000.0])
+        >>> t_boundaries = jnp.array([1000.0])
+        >>> left_bins = jnp.array([0.0, 0.1, 0.2])
+        >>> right_bins = jnp.array([0.1, 0.2, 0.3])
+        >>> result = expected_ld_piecewise_constant(Ne_values, t_boundaries, left_bins, right_bins)
+    """
+    Ne_values = jnp.asarray(Ne_values)
+    t_boundaries = jnp.asarray(t_boundaries)
+    u_i = jnp.asarray(left_bins)
+    u_j = jnp.asarray(right_bins)
+
+    n_epochs = len(Ne_values)
+    if len(t_boundaries) != n_epochs - 1:
+        raise ValueError(
+            f"Expected {n_epochs - 1} time boundaries for {n_epochs} epochs"
+        )
+
+    def S_ut_constant(Ne, Gamma_prev, t_prev, t, u):
+        """Survival function for constant Ne epoch."""
+        t = t[:, None]
+        u = u[None, :]
+        Gamma = Gamma_prev + (t - t_prev) / (2 * Ne)
+        return jnp.exp(-2 * t * u - Gamma) / (2 * Ne)
+
+    # Prepare quadrature for u
+    u_points = jnp.array([gauss(a, b, 100)[0] for (a, b) in zip(u_i, u_j)])
+    u_weights = jnp.array([gauss(a, b, 100)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
+    u_col = u_points.flatten()
+
+    # Compute integrals for each epoch
+    total_integral = jnp.zeros_like(u_col)
+    Gamma_prev = 0.0
+    t_prev = 0.0
+
+    for epoch in range(n_epochs):
+        Ne = Ne_values[epoch]
+
+        if epoch < n_epochs - 1:
+            # Finite interval [t_prev, t_curr]
+            t_curr = t_boundaries[epoch]
+            times = (t_curr - t_prev) / 2 * _LEGENDRE_X_300 + (t_curr + t_prev) / 2
+            f_t = S_ut_constant(Ne, Gamma_prev, t_prev, times, u_col)
+            integral = jnp.sum(
+                f_t * _LEGENDRE_W_300[:, None] * (t_curr - t_prev) / 2, axis=0
+            )
+
+            # Update Gamma_prev for next epoch
+            Gamma_prev = Gamma_prev + (t_curr - t_prev) / (2 * Ne)
+            t_prev = t_curr
+        else:
+            # Last epoch: [t_prev, ∞)
+            trans_legendre_x = 0.5 * _LEGENDRE_X_300 + 0.5
+            trans_legendre_w = 0.5 * _LEGENDRE_W_300
+            times = t_prev + trans_legendre_x / (1 - trans_legendre_x)
+            f_t = S_ut_constant(Ne, Gamma_prev, t_prev, times, u_col)
+            integral = jnp.sum(
+                f_t
+                * (trans_legendre_w[:, None] / (1 - trans_legendre_x)[:, None] ** 2),
+                axis=0,
+            )
+
+        total_integral += integral
+
+    res_matrix = total_integral.reshape(u_points.shape)
+    res_per_bin = jnp.sum(res_matrix * u_weights, axis=1)
+
     if sample_size is not None:
         return correct_ld_finite_sample(res_per_bin, sample_size)
     return res_per_bin
