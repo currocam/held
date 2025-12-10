@@ -29,6 +29,14 @@ rule prediction_plot:
             Ne_a=[1000],
             t0=[25, 50],
         ),
+        # Invasion
+        expand(
+            "results/pickles/msprime/invasion_fixed/{Ne_c}_{Ne_a}_{t0}_{Ne_f}.pkl",
+            Ne_c=[5000],
+            Ne_a=[10_000],
+            t0=[25, 50],
+            Ne_f=[10, 100],
+        ),
         script=[
             "plots/01-msprime_simulation_prediction.py",
             "plots/01-msprime_simulation_zscores.py",
@@ -82,6 +90,22 @@ rule prediction_exponential_fixed:
         """
 
 
+rule prediction_invasion_fixed:
+    input:
+        script="scripts/01-msprime_simulation_invasion_fixed_mutations.py",
+    output:
+        "results/pickles/msprime/invasion_fixed/{Ne_c}_{Ne_a}_{t0}_{Ne_f}.pkl",
+    envmodules:
+        ENVMODULES,
+    threads: 8
+    localrule: False
+    shell:
+        """
+        export UV_CACHE_DIR="{UV_TMPDIR}"
+        {UV_BINARY} -n run --refresh --script {input.script} {wildcards.Ne_c} {wildcards.Ne_a} {wildcards.t0} {wildcards.Ne_f} {output}
+        """
+
+
 rule benchmark_ld_compute:
     input:
         script="scripts/00-benchmark_ld_compute.py",
@@ -107,3 +131,4 @@ rule benchmark_ld_plot:
         export UV_CACHE_DIR="{UV_TMPDIR}"
         ./{input.script} < {input.data}
         """
+

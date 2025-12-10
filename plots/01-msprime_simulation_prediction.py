@@ -121,6 +121,18 @@ labels_growth = [
     r"$\{N_c=1\mathrm{e}{4},t_0=50\}$",
     r"$\{N_c=5\mathrm{e}{3},t_0=50\}$",
 ]
+files_invasion = [
+    "results/pickles/msprime/invasion_fixed/5000_10000_25_10.pkl",
+    "results/pickles/msprime/invasion_fixed/5000_10000_25_100.pkl",
+    "results/pickles/msprime/invasion_fixed/5000_10000_50_10.pkl",
+    "results/pickles/msprime/invasion_fixed/5000_10000_50_100.pkl",
+]
+labels_invasion = [
+    r"$\{N_f=10,t_0=25\}$",
+    r"$\{N_f=100,t_0=25\}$",
+    r"$\{N_f=10,t_0=50\}$",
+    r"$\{N_f=100,t_0=50\}$",
+]
 # %%
 # Create all three plots and save to a single PDF
 with PdfPages("plots/01-msprime_simulation_prediction/all.pdf") as pdf:
@@ -136,6 +148,10 @@ with PdfPages("plots/01-msprime_simulation_prediction/all.pdf") as pdf:
     pdf.savefig(fig3)
     plt.close(fig3)
 
+    fig4 = plot(files_invasion, labels_invasion, "Invasion scenario")
+    pdf.savefig(fig4)
+    plt.close(fig4)
+
 # %%
 # Also save as PGF files (one per scenario)
 fig1 = plot(files_decline, labels_decline, "Decline scenario")
@@ -149,3 +165,7 @@ plt.close(fig2)
 fig3 = plot(files_growth, labels_growth, "Growth scenario")
 fig3.savefig("plots/01-msprime_simulation_prediction/growth.pgf")
 plt.close(fig3)
+
+fig4 = plot(files_invasion, labels_invasion, "Invasion scenario")
+fig4.savefig("plots/01-msprime_simulation_prediction/invasion.pgf")
+plt.close(fig4)
