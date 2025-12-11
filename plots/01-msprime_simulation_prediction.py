@@ -55,9 +55,9 @@ def plot(files, labels, title):
     colors = ["tab:blue", "tab:orange", "tab:green", "tab:red"]
     # Left plot: Correlation data
     for i in range(4):
-        ax1.scatter(midpoints, datas[i]["mean"], s=40, alpha=0.7, color=colors[i])
+        ax1.scatter(midpoints, datas[i]["mean"], alpha=0.7, color=colors[i])
         ax1.plot(
-            midpoints, datas[i]["mean"], label=labels[i], linewidth=2, color=colors[i]
+            midpoints, datas[i]["mean"], label=labels[i], color=colors[i]
         )
     ax1.set_xlabel("Bin midpoint (Morgan)")
     ax1.set_ylabel(
@@ -79,7 +79,7 @@ def plot(files, labels, title):
         handles=handles, loc="lower center", ncols=4, bbox_to_anchor=(0.5, -0.02)
     )
     # Adjust layout to prevent legend overlap
-    plt.tight_layout(rect=[0, 0.05, 1, 0.96])
+    plt.tight_layout(rect=(0.0, 0.05, 1.0, 0.96))
 
     return fig
 
@@ -133,6 +133,30 @@ labels_invasion = [
     r"$\{N_f=10,t_0=50\}$",
     r"$\{N_f=100,t_0=50\}$",
 ]
+files_three= [
+    "results/pickles/msprime/three_epochs_fixed/10000_1000_10000_25_50.pkl",
+    "results/pickles/msprime/three_epochs_fixed/10000_1000_10000_25_100.pkl",
+    "results/pickles/msprime/three_epochs_fixed/10000_5000_10000_25_50.pkl",
+    "results/pickles/msprime/three_epochs_fixed/10000_5000_10000_25_100.pkl",
+]
+labels_three = [
+    r"$\{N_c=1\mathrm{e}{3},t_1=50\}$",
+    r"$\{N_c=1\mathrm{e}{3},t_1=100\}$",
+    r"$\{N_c=5\mathrm{e}{3},t_1=50\}$",
+    r"$\{N_c=5\mathrm{e}{3},t_1=100\}$",
+]
+files_carrying_capacity = [
+    "results/pickles/msprime/carrying_capacity/5000_10000_25_75_100.pkl",
+    "results/pickles/msprime/carrying_capacity/5000_10000_25_75_10.pkl",
+    "results/pickles/msprime/carrying_capacity/5000_10000_50_75_10.pkl",
+    "results/pickles/msprime/carrying_capacity/5000_10000_50_75_100.pkl",
+]
+labels_carrying_capacity = [
+    r"$\{N_f=100,t_0=25\}$",
+    r"$\{N_f=10,t_0=25\}$",
+    r"$\{N_f=10,t_0=50\}$",
+    r"$\{N_f=100,t_0=50\}$",
+]
 # %%
 # Create all three plots and save to a single PDF
 with PdfPages("plots/01-msprime_simulation_prediction/all.pdf") as pdf:
@@ -152,6 +176,13 @@ with PdfPages("plots/01-msprime_simulation_prediction/all.pdf") as pdf:
     pdf.savefig(fig4)
     plt.close(fig4)
 
+    fig5 = plot(files_three, labels_three, "Bottleneck scenario")
+    pdf.savefig(fig5)
+    plt.close(fig5)
+
+    fig6 = plot(files_carrying_capacity, labels_carrying_capacity, "Carrying capacity scenario")
+    pdf.savefig(fig6)
+    plt.close(fig6)
 # %%
 # Also save as PGF files (one per scenario)
 fig1 = plot(files_decline, labels_decline, "Decline scenario")
@@ -169,3 +200,12 @@ plt.close(fig3)
 fig4 = plot(files_invasion, labels_invasion, "Invasion scenario")
 fig4.savefig("plots/01-msprime_simulation_prediction/invasion.pgf")
 plt.close(fig4)
+
+fig5 = plot(files_three, labels_three, "Bottleneck scenario")
+fig5.savefig("plots/01-msprime_simulation_prediction/bottleneck.pgf")
+plt.close(fig5)
+
+fig6 = plot(files_carrying_capacity, labels_carrying_capacity, "Carrying capacity scenario")
+fig6.savefig("plots/01-msprime_simulation_prediction/carrying_capacity.pgf")
+plt.close(fig6)
+
