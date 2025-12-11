@@ -73,9 +73,9 @@ def expected_ld_constant(population_size, left_bins, right_bins, sample_size=Non
 
 
 # Pre-compute quadrature rules for expected_ld_piecewise_exponential
-_LEGENDRE_X_300, _LEGENDRE_W_300 = np.polynomial.legendre.leggauss(300)
-_LEGENDRE_X_300 = jnp.asarray(_LEGENDRE_X_300)
-_LEGENDRE_W_300 = jnp.asarray(_LEGENDRE_W_300)
+_LEGENDRE_X_200, _LEGENDRE_W_200 = np.polynomial.legendre.leggauss(200)
+_LEGENDRE_X_200 = jnp.asarray(_LEGENDRE_X_200)
+_LEGENDRE_W_200 = jnp.asarray(_LEGENDRE_W_200)
 
 
 @jax.jit
@@ -120,22 +120,15 @@ def expected_ld_piecewise_exponential(
         res2 = numerator * jnp.exp(exponent2) / (8 * Ne1**2)
         return jnp.where(jnp.abs(alpha) < epsilon, res2, res1)
 
-    def S_ut_piece2(alpha, Ne1, Ne2, t0, t, u):
-        t = t[:, None]
-        u = u[None, :]
+    # There is a closed-form solution for this piece
+    def Su_piece2(alpha, Nec, Nea, t0, u):
         epsilon = 1e-5
-        # If alpha is not close to zero
-        inner1 = (Ne1 * alpha * (t0 - t) + Ne2 * (1 - jnp.exp(alpha * t0))) / (
-            2 * Ne1 * Ne2 * alpha
-        )
-        exponent1 = -2 * t * u + inner1
-        res1 = jnp.exp(exponent1) / (2 * Ne2)
-        # If alpha is close to zero we use Taylor series
-        inner2 = 4 * Ne1 - alpha * t0**2
-        exponent2 = (-4 * Ne1 * Ne2 * t * u + Ne1 * (t0 - t) - Ne2 * t0) / (
-            2 * Ne1 * Ne2
-        )
-        res2 = inner2 * jnp.exp(exponent2) / (8 * Ne1 * Ne2)
+        # Auto-generated code
+        # fmt: off
+        res1 = 1 / (4 * u * Nea + 1) * jnp.exp(-(4 * u * Nec * alpha * t0 + jnp.exp(t0 * alpha) - 1) / Nec / alpha / 2)
+        # If alpha is close to zero we use Taylor expansion for alpha=0
+        res2 = 1 / (4 * u * Nea + 1) * jnp.exp(-t0 * (4 * Nec * u + 1) / Nec / 2) - 1 / (4 * u * Nea + 1) * jnp.exp(-t0 * (4 * Nec * u + 1) / Nec / 2) * t0 ** 2 / Nec * alpha / 4
+        # fmt: on
         return jnp.where(jnp.abs(alpha) < epsilon, res2, res1)
 
     # Numerical integration using pre-computed Legendre quadrature (15 points for time, 10 for bins)
@@ -144,21 +137,13 @@ def expected_ld_piecewise_exponential(
     u_col = u_points.flatten()
 
     # First integral: [0, t0]
-    times1 = (t0 - 0) / 2 * _LEGENDRE_X_300 + (t0 + 0) / 2
+    times1 = (t0 - 0) / 2 * _LEGENDRE_X_200 + (t0 + 0) / 2
     f_t_piece1 = S_ut_piece1(alpha, Ne_c, times1, u_col)
     integral_piece1 = jnp.sum(
-        f_t_piece1 * _LEGENDRE_W_300[:, None] * (t0 - 0) / 2, axis=0
+        f_t_piece1 * _LEGENDRE_W_200[:, None] * (t0 - 0) / 2, axis=0
     )
-
     # Second integral: [t0, ∞)
-    trans_legendre_x = 0.5 * _LEGENDRE_X_300 + 0.5
-    trans_legendre_w = 0.5 * _LEGENDRE_W_300
-    times2 = t0 + trans_legendre_x / (1 - trans_legendre_x)
-    f_t_piece2 = S_ut_piece2(alpha, Ne_c, Ne_a, t0, times2, u_col)
-    integral_piece2 = jnp.sum(
-        f_t_piece2 * (trans_legendre_w[:, None] / (1 - trans_legendre_x)[:, None] ** 2),
-        axis=0,
-    )
+    integral_piece2 = Su_piece2(alpha, Ne_c, Ne_a, t0, u_col)
 
     res_flat = integral_piece1 + integral_piece2
     res_matrix = res_flat.reshape(u_points.shape)
@@ -233,10 +218,10 @@ def expected_ld_piecewise_constant(
         if epoch < n_epochs - 1:
             # Finite interval [t_prev, t_curr]
             t_curr = t_boundaries[epoch]
-            times = (t_curr - t_prev) / 2 * _LEGENDRE_X_300 + (t_curr + t_prev) / 2
+            times = (t_curr - t_prev) / 2 * _LEGENDRE_X_200 + (t_curr + t_prev) / 2
             f_t = S_ut_constant(Ne, Gamma_prev, t_prev, times, u_col)
             integral = jnp.sum(
-                f_t * _LEGENDRE_W_300[:, None] * (t_curr - t_prev) / 2, axis=0
+                f_t * _LEGENDRE_W_200[:, None] * (t_curr - t_prev) / 2, axis=0
             )
 
             # Update Gamma_prev for next epoch
@@ -244,8 +229,8 @@ def expected_ld_piecewise_constant(
             t_prev = t_curr
         else:
             # Last epoch: [t_prev, ∞)
-            trans_legendre_x = 0.5 * _LEGENDRE_X_300 + 0.5
-            trans_legendre_w = 0.5 * _LEGENDRE_W_300
+            trans_legendre_x = 0.5 * _LEGENDRE_X_200 + 0.5
+            trans_legendre_w = 0.5 * _LEGENDRE_W_200
             times = t_prev + trans_legendre_x / (1 - trans_legendre_x)
             f_t = S_ut_constant(Ne, Gamma_prev, t_prev, times, u_col)
             integral = jnp.sum(

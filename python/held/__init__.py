@@ -1,4 +1,4 @@
-"""held - High-throughput Estimation of Linkage Disequilibrium."""
+"""held - History estimated from LD"""
 
 from .held import *
 from .ld import ld_from_tree_sequence, _construct_bins

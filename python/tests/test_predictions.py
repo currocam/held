@@ -176,7 +176,7 @@ def test_expected_ld_secondary_introduction():
     t0 = rng.uniform(10, 80)
     t1 = rng.uniform(t0 + 1, t0 + 40)  # t1 > t0
 
-    # Random migration rate between 0.0001 and 0.01
+    # Random migration rate between 0.0001 and 0.001
     migration_rate = rng.uniform(0.0001, 0.01)
 
     # Random bins
