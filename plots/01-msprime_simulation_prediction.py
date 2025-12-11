@@ -57,7 +57,7 @@ def plot(files, labels, title):
     for i in range(4):
         ax1.scatter(midpoints, datas[i]["mean"], alpha=0.7, color=colors[i])
         ax1.plot(
-            midpoints, datas[i]["mean"], label=labels[i], color=colors[i]
+            midpoints, datas[i]["predictions"], label=labels[i], color=colors[i]
         )
     ax1.set_xlabel("Bin midpoint (Morgan)")
     ax1.set_ylabel(
