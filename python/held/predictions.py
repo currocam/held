@@ -77,6 +77,9 @@ _LEGENDRE_X_200, _LEGENDRE_W_200 = np.polynomial.legendre.leggauss(200)
 _LEGENDRE_X_200 = jnp.asarray(_LEGENDRE_X_200)
 _LEGENDRE_W_200 = jnp.asarray(_LEGENDRE_W_200)
 
+# There's a singularity at alpha = 0. We do branch here if epsilon is small
+ALPHA_EPSILON = 1e-7
+
 
 @jax.jit
 def expected_ld_piecewise_exponential(
@@ -109,7 +112,6 @@ def expected_ld_piecewise_exponential(
     def S_ut_piece1(alpha, Ne1, t, u):
         t = t[:, None]
         u = u[None, :]
-        epsilon = 1e-5
         # If alpha is not close to zero
         inner1 = (1 - jnp.exp(alpha * t)) / (2 * Ne1 * alpha)
         exponent1 = alpha * t - 2 * t * u + inner1
@@ -118,18 +120,17 @@ def expected_ld_piecewise_exponential(
         numerator = 4 * Ne1 + alpha * t * (4 * Ne1 - t)
         exponent2 = -t * (4 * Ne1 * u + 1) / (2 * Ne1)
         res2 = numerator * jnp.exp(exponent2) / (8 * Ne1**2)
-        return jnp.where(jnp.abs(alpha) < epsilon, res2, res1)
+        return jnp.where(jnp.abs(alpha) < ALPHA_EPSILON, res2, res1)
 
     # There is a closed-form solution for this piece
     def Su_piece2(alpha, Nec, Nea, t0, u):
-        epsilon = 1e-5
         # Auto-generated code
         # fmt: off
         res1 = 1 / (4 * u * Nea + 1) * jnp.exp(-(4 * u * Nec * alpha * t0 + jnp.exp(t0 * alpha) - 1) / Nec / alpha / 2)
         # If alpha is close to zero we use Taylor expansion for alpha=0
         res2 = 1 / (4 * u * Nea + 1) * jnp.exp(-t0 * (4 * Nec * u + 1) / Nec / 2) - 1 / (4 * u * Nea + 1) * jnp.exp(-t0 * (4 * Nec * u + 1) / Nec / 2) * t0 ** 2 / Nec * alpha / 4
         # fmt: on
-        return jnp.where(jnp.abs(alpha) < epsilon, res2, res1)
+        return jnp.where(jnp.abs(alpha) < ALPHA_EPSILON, res2, res1)
 
     # Numerical integration using pre-computed Legendre quadrature (15 points for time, 10 for bins)
     u_points = jnp.array([gauss(a, b, 100)[0] for (a, b) in zip(u_i, u_j)])
@@ -148,6 +149,78 @@ def expected_ld_piecewise_exponential(
     res_flat = integral_piece1 + integral_piece2
     res_matrix = res_flat.reshape(u_points.shape)
     res_per_bin = jnp.sum(res_matrix * u_weights, axis=1)
+    if sample_size is not None:
+        return correct_ld_finite_sample(res_per_bin, sample_size)
+    return res_per_bin
+
+
+@jax.jit
+def expected_ld_exponential_carrying_capacity(
+    Ne_c,
+    Ne_a,
+    alpha,
+    t0,
+    t1,
+    left_bins,
+    right_bins,
+    sample_size=None,
+):
+    """
+    Compute expected LD (E[X_iX_jY_iY_j]) under exponential growth followed by carrying capacity.
+
+    Args:
+        Ne_c (float): Contemporary diploid effective population size.
+        Ne_a (float): Ancestral diploid effective population size.
+        alpha (float): Rate of change of Ne during the exponential phase.
+        t0 (float): Time when population reaches carrying capacity.
+        t1 (float): Time when exponential phase begins.
+        left_bins (array-like): Left distances for SNP pairs.
+        right_bins (array-like): Right distances for SNP pairs.
+        sample_size (int, optional): Number of diploid individuals. If provided, applies finite sample correction.
+
+    Returns:
+        array: Expected LD values across SNP distance bins.
+    """
+    u_i = jnp.asarray(left_bins)
+    u_j = jnp.asarray(right_bins)
+    # Numerical integration using pre-computed Legendre quadrature (15 points for time, 10 for bins)
+    u_points = jnp.array([gauss(a, b, 100)[0] for (a, b) in zip(u_i, u_j)])
+    u_weights = jnp.array([gauss(a, b, 100)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
+    u = u_points.flatten()
+    # Auto-generated code
+    # fmt: off
+    Nec, Nea = Ne_c, Ne_a
+    # Close-form pieces:
+    piece1 = (1 - jnp.exp(-t0 * (4 * u * Nec + 1) / Nec / 2)) / (4 * u * Nec + 1)
+    # There's a singularity at alpha=0
+    piece3_nonzero = jnp.exp((jnp.exp(t0 * alpha) - jnp.exp(t1 * alpha) - (4 * Nec * t1 * u + t0) * alpha) / Nec / alpha / 2) / (4 * u * Nea + 1)
+    piece3_taylor = jnp.exp(-t1 * (4 * u * Nec + 1) / Nec / 2) * (4 * Nec + (t0 ** 2 - t1 ** 2) * alpha) / (16 * u * Nea + 4) / Nec
+    # Numerical integration
+    times2 = (t1 - t0) / 2 * _LEGENDRE_X_200 + (t1 + t0) / 2
+    def S_ut_piece2_nonzero(alpha, Nec, t0, t, u):
+        t = t[:, None]
+        u = u[None, :]
+        return 1 / Nec * jnp.exp((jnp.exp(t0 * alpha) - jnp.exp(t * alpha) + 2 * t * alpha ** 2 * Nec + (-4 * Nec * t * u - t0) * alpha) / Nec / alpha / 2) / 2
+    piece2_nonzero = jnp.sum(
+        S_ut_piece2_nonzero(alpha, Ne_c, t0, times2, u) * _LEGENDRE_W_200[:, None] * (t1 - t0) / 2, axis=0
+    )
+    def S_ut_piece2_taylor(Nec, t, u):
+        t = t[:, None]
+        u = u[None, :]
+        return 1 / Nec * jnp.exp(-t * (4 * u * Nec + 1) / Nec / 2) / 2
+    piece2_taylor = jnp.sum(
+        S_ut_piece2_taylor(Ne_c, times2, u) * _LEGENDRE_W_200[:, None] * (t1 - t0) / 2, axis=0
+    )
+    # fmt: on
+    res_flat_nonzero = piece1 + piece2_nonzero + piece3_nonzero
+    res_flat_taylor = piece1 + piece2_taylor + piece3_taylor
+    res_matrix = res_flat_nonzero.reshape(u_points.shape)
+    res_matrix_taylor = res_flat_taylor.reshape(u_points.shape)
+    res_per_bin = jnp.sum(res_matrix * u_weights, axis=1)
+    res_per_bin_taylor = jnp.sum(res_matrix_taylor * u_weights, axis=1)
+    res_per_bin = jnp.where(
+        jnp.abs(alpha) < ALPHA_EPSILON, res_per_bin_taylor, res_per_bin
+    )
     if sample_size is not None:
         return correct_ld_finite_sample(res_per_bin, sample_size)
     return res_per_bin

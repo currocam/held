@@ -7,6 +7,7 @@ from .predictions import (
     expected_ld_constant,
     expected_ld_piecewise_constant,
     expected_ld_piecewise_exponential,
+    expected_ld_exponential_carrying_capacity,
     expected_ld_secondary_introduction,
     simulate_from_msprime,
 )
@@ -21,6 +22,7 @@ __all__ += [
     "expected_ld_constant",
     "expected_ld_piecewise_constant",
     "expected_ld_piecewise_exponential",
+    "expected_ld_exponential_carrying_capacity",
     "expected_ld_secondary_introduction",
     "simulate_from_msprime",
 ]
