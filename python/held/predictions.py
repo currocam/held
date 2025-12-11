@@ -193,34 +193,28 @@ def expected_ld_exponential_carrying_capacity(
     # Close-form pieces:
     piece1 = (1 - jnp.exp(-t0 * (4 * u * Nec + 1) / Nec / 2)) / (4 * u * Nec + 1)
     # There's a singularity at alpha=0
-    piece3_nonzero = jnp.exp((jnp.exp(t0 * alpha) - jnp.exp(t1 * alpha) - (4 * Nec * t1 * u + t0) * alpha) / Nec / alpha / 2) / (4 * u * Nea + 1)
-    piece3_taylor = jnp.exp(-t1 * (4 * u * Nec + 1) / Nec / 2) * (4 * Nec + (t0 ** 2 - t1 ** 2) * alpha) / (16 * u * Nea + 4) / Nec
-    # Numerical integration
-    times2 = (t1 - t0) / 2 * _LEGENDRE_X_200 + (t1 + t0) / 2
-    def S_ut_piece2_nonzero(alpha, Nec, t0, t, u):
-        t = t[:, None]
-        u = u[None, :]
-        return 1 / Nec * jnp.exp((jnp.exp(t0 * alpha) - jnp.exp(t * alpha) + 2 * t * alpha ** 2 * Nec + (-4 * Nec * t * u - t0) * alpha) / Nec / alpha / 2) / 2
-    piece2_nonzero = jnp.sum(
-        S_ut_piece2_nonzero(alpha, Ne_c, t0, times2, u) * _LEGENDRE_W_200[:, None] * (t1 - t0) / 2, axis=0
+    piece3_nonzero = jnp.exp((1 - jnp.exp(-(t0 - t1) * alpha) - (4 * Nec * t1 * u + t0) * alpha) / alpha / Nec / 2) / (4 * u * Nea + 1)
+    piece3_taylor = jnp.exp(-t1 * (4 * u * Nec + 1) / Nec / 2) / (4 * u * Nea + 1)
+    piece3 = jnp.where(
+        jnp.abs(alpha) < ALPHA_EPSILON, piece3_taylor, piece3_nonzero
     )
-    def S_ut_piece2_taylor(Nec, t, u):
+    # Numerical integration [t0, t1]
+    times2 = (t1 - t0) / 2 * _LEGENDRE_X_200 + (t1 + t0) / 2
+    def S_ut_piece2(alpha, Nec, t0, t, u):
         t = t[:, None]
         u = u[None, :]
-        return 1 / Nec * jnp.exp(-t * (4 * u * Nec + 1) / Nec / 2) / 2
-    piece2_taylor = jnp.sum(
-        S_ut_piece2_taylor(Ne_c, times2, u) * _LEGENDRE_W_200[:, None] * (t1 - t0) / 2, axis=0
+        res_nonzero = 1 / Nec * jnp.exp((-jnp.exp((t - t0) * alpha) + 1 + (2 * t - 2 * t0) * Nec * alpha ** 2 + (-4 * Nec * t * u - t0) * alpha) / alpha / Nec / 2) / 2
+        res_taylor = 1 / Nec * jnp.exp(-t * (4 * u * Nec + 1) / Nec / 2) / 2
+        return jnp.where(
+            jnp.abs(alpha) < ALPHA_EPSILON, res_taylor, res_nonzero
+        )
+    piece2 = jnp.sum(
+        S_ut_piece2(alpha, Ne_c, t0, times2, u) * _LEGENDRE_W_200[:, None] * (t1 - t0) / 2, axis=0
     )
     # fmt: on
-    res_flat_nonzero = piece1 + piece2_nonzero + piece3_nonzero
-    res_flat_taylor = piece1 + piece2_taylor + piece3_taylor
-    res_matrix = res_flat_nonzero.reshape(u_points.shape)
-    res_matrix_taylor = res_flat_taylor.reshape(u_points.shape)
+    res_flat = piece1 + piece2 + piece3
+    res_matrix = res_flat.reshape(u_points.shape)
     res_per_bin = jnp.sum(res_matrix * u_weights, axis=1)
-    res_per_bin_taylor = jnp.sum(res_matrix_taylor * u_weights, axis=1)
-    res_per_bin = jnp.where(
-        jnp.abs(alpha) < ALPHA_EPSILON, res_per_bin_taylor, res_per_bin
-    )
     if sample_size is not None:
         return correct_ld_finite_sample(res_per_bin, sample_size)
     return res_per_bin
