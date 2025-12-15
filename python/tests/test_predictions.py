@@ -450,6 +450,204 @@ def test_derivatives_computable():
     assert jnp.isfinite(gradient_m), "Gradient w.r.t. migration_rate should be finite"
 
 
+def test_expected_sample_heterozygosity_constant_montecarlo():
+    """Test expected_sample_heterozygosity_constant using Monte Carlo simulation with msprime."""
+    import msprime
+
+    # Test parameters
+    Ne = 10000.0
+    mu = 1
+    num_replicates = 25_000
+    random_seed = 42
+
+    # Theoretical prediction
+    expected_het = held.expected_sample_heterozygosity_constant(Ne, mu)
+
+    # Monte Carlo simulation using diversity statistic
+    demography = msprime.Demography.isolated_model([Ne])
+
+    diversities = []
+    for ts in msprime.sim_ancestry(
+        samples=1,
+        demography=demography,
+        num_replicates=num_replicates,
+        random_seed=random_seed,
+    ):
+        diversities.append(ts.diversity(mode="branch") / 2)
+    diversities = np.asarray(diversities)
+    # Monte Carlo estimate
+    mc_estimate = float(np.mean(diversities * 2 * mu))
+    # Check that the theoretical prediction matches the Monte Carlo estimate
+    # Using 3 standard errors for 99.7% confidence
+    se = np.std(diversities) / np.sqrt(num_replicates)
+    assert abs(expected_het - mc_estimate) < 3 * se, (
+        f"Expected {expected_het}, got {mc_estimate} ± {3 * se}"
+    )
+
+
+def test_expected_sample_heterozygosity_piecewise_exponential_montecarlo():
+    """Test expected_sample_heterozygosity_piecewise_exponential using Monte Carlo simulation."""
+    import msprime
+
+    # Test parameters - growth scenario
+    Ne_c = 5000.0
+    Ne_a = 20000.0
+    t0 = 100.0
+    alpha = 0.005  # Positive growth rate
+    mu = 1
+    num_replicates = 50_000
+    random_seed = 123
+
+    # Theoretical prediction
+    expected_het = held.expected_sample_heterozygosity_piecewise_exponential(
+        Ne_c, Ne_a, t0, alpha, mu
+    )
+
+    # Create demographic model
+    demography = msprime.Demography()
+    demography.add_population(name="pop", initial_size=Ne_c)
+    demography.add_population_parameters_change(
+        time=0, initial_size=Ne_c, growth_rate=alpha
+    )
+    demography.add_population_parameters_change(
+        time=t0, initial_size=Ne_a, growth_rate=0
+    )
+
+    # Monte Carlo simulation using diversity
+    diversities = []
+    for ts in msprime.sim_ancestry(
+        samples=1,
+        demography=demography,
+        num_replicates=num_replicates,
+        random_seed=random_seed,
+    ):
+        diversities.append(ts.diversity(mode="branch") / 2)
+    diversities = np.asarray(diversities)
+    # Monte Carlo estimate
+    mc_estimate = float(np.mean(diversities * 2 * mu))
+    se = np.std(diversities) / np.sqrt(num_replicates)
+
+    assert abs(expected_het - mc_estimate) < 3 * se, (
+        f"Expected {expected_het}, got {mc_estimate} ± {3 * se}"
+    )
+
+
+def test_expected_sample_heterozygosity_exponential_carrying_capacity_montecarlo():
+    """Test expected_sample_heterozygosity_exponential_carrying_capacity using Monte Carlo simulation."""
+    import msprime
+
+    # Test parameters
+    Ne_c = 8000.0
+    Ne_a = 25000.0
+    alpha = 0.015
+    t0 = 50.0
+    t1 = 150.0
+    mu = 1
+    num_replicates = 25000
+    random_seed = 456
+
+    # Theoretical prediction
+    expected_het = held.expected_sample_heterozygosity_exponential_carrying_capacity(
+        Ne_c, Ne_a, alpha, t0, t1, mu
+    )
+
+    # Create demographic model
+    demography = msprime.Demography()
+    demography.add_population(name="pop", initial_size=Ne_c)
+    # Phase 1: Constant at Ne_c from 0 to t0
+    # Phase 2: Exponential growth from t0 to t1
+    demography.add_population_parameters_change(
+        time=t0, initial_size=Ne_c, growth_rate=alpha, population="pop"
+    )
+    # Phase 3: Constant at Ne_a from t1 onwards
+    demography.add_population_parameters_change(
+        time=t1, initial_size=Ne_a, growth_rate=0, population="pop"
+    )
+
+    # Monte Carlo simulation using diversity
+    diversities = []
+    for ts in msprime.sim_ancestry(
+        samples=1,
+        demography=demography,
+        num_replicates=num_replicates,
+        random_seed=random_seed,
+    ):
+        diversities.append(ts.diversity(mode="branch") / 2)
+    diversities = np.asarray(diversities)
+    # Monte Carlo estimate
+    mc_estimate = float(np.mean(diversities * 2 * mu))
+    se = np.std(diversities) / np.sqrt(num_replicates)
+
+    assert abs(expected_het - mc_estimate) < 3 * se, (
+        f"Expected {expected_het}, got {mc_estimate} ± {3 * se}"
+    )
+
+
+def test_expected_sample_heterozygosity_secondary_introduction_montecarlo():
+    """Test expected_sample_heterozygosity_secondary_introduction using Monte Carlo simulation."""
+    import msprime
+
+    # Test parameters
+    Ne_c = 10000.0
+    Ne_f = 8000.0
+    Ne_a = 20000.0
+    t0 = 50.0
+    t1 = 200.0
+    migration_rate = 0.001
+    mu = 1
+    num_replicates = 25000
+    random_seed = 789
+
+    # Theoretical prediction
+    expected_het = held.expected_sample_heterozygosity_secondary_introduction(
+        Ne_c, Ne_f, Ne_a, t0, t1, migration_rate, mu
+    )
+
+    # Create demographic model with island model (migration between two populations)
+    demography = msprime.Demography()
+    demography.add_population(name="pop1", initial_size=Ne_c)
+    demography.add_population(name="pop2", initial_size=Ne_c)
+
+    # Phase 1: Contemporary phase with no migration (0 to t0)
+    # Phase 2: Migration phase (t0 to t1)
+    demography.add_population_parameters_change(
+        time=t0, initial_size=Ne_f, population="pop1"
+    )
+    demography.add_population_parameters_change(
+        time=t0, initial_size=Ne_f, population="pop2"
+    )
+    demography.add_migration_rate_change(
+        time=t0, rate=migration_rate, source="pop1", dest="pop2"
+    )
+    demography.add_migration_rate_change(
+        time=t0, rate=migration_rate, source="pop2", dest="pop1"
+    )
+
+    # Phase 3: Ancestral phase - populations merge (t1 onwards)
+    demography.add_population_parameters_change(
+        time=t1, initial_size=Ne_a, population="pop1"
+    )
+    demography.add_population_split(time=t1, derived=["pop2"], ancestral="pop1")
+
+    # Monte Carlo simulation - sample from same population using diversity
+    diversities = []
+    for ts in msprime.sim_ancestry(
+        samples={"pop1": 1},
+        demography=demography,
+        num_replicates=num_replicates,
+        random_seed=random_seed,
+    ):
+        diversities.append(ts.diversity(mode="branch") / 2)
+    diversities = np.asarray(diversities)
+    # Monte Carlo estimate
+    mc_estimate = float(np.mean(diversities * 2 * mu))
+    se = np.std(diversities) / np.sqrt(num_replicates)
+
+    assert abs(expected_het - mc_estimate) < 3 * se, (
+        f"Expected {expected_het}, got {mc_estimate} ± {3 * se}"
+    )
+
+
 if __name__ == "__main__":
     test_expected_ld_constant()
     test_expected_ld_piecewise_exponential()
@@ -457,4 +655,8 @@ if __name__ == "__main__":
     test_expected_ld_piecewise_constant()
     test_expected_ld_secondary_introduction()
     test_derivatives_computable()
+    test_expected_sample_heterozygosity_constant_montecarlo()
+    test_expected_sample_heterozygosity_piecewise_exponential_montecarlo()
+    test_expected_sample_heterozygosity_exponential_carrying_capacity_montecarlo()
+    test_expected_sample_heterozygosity_secondary_introduction_montecarlo()
     print("All tests passed!")

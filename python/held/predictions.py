@@ -72,6 +72,21 @@ def expected_ld_constant(population_size, left_bins, right_bins, sample_size=Non
     return mu
 
 
+@jax.jit
+def expected_sample_heterozygosity_constant(population_size, mu):
+    """
+    Compute the expected sample heterozygosity under a constant population size model.
+
+    Args:
+        population_size (float): Population size.
+        mu (float):  Mutation rate per bp
+
+    Returns:
+        array: Expected sample heterozygosity values.
+    """
+    return 4 * population_size * mu
+
+
 # Pre-compute quadrature rules for expected_ld_piecewise_exponential
 _LEGENDRE_X_200, _LEGENDRE_W_200 = np.polynomial.legendre.leggauss(200)
 _LEGENDRE_X_200 = jnp.asarray(_LEGENDRE_X_200)
@@ -109,17 +124,28 @@ def expected_ld_piecewise_exponential(
     u_i = jnp.asarray(left_bins)
     u_j = jnp.asarray(right_bins)
 
-    def S_ut_piece1(alpha, Ne1, t, u):
-        t = t[:, None]
+    def Su_piece1(alpha, Ne_c, t0, u):
         u = u[None, :]
         # If alpha is not close to zero
-        inner1 = (1 - jnp.exp(alpha * t)) / (2 * Ne1 * alpha)
-        exponent1 = alpha * t - 2 * t * u + inner1
-        res1 = jnp.exp(exponent1) / (2 * Ne1)
+        t = (t0 - 0) / 2 * _LEGENDRE_X_200 + (t0 + 0) / 2
+        t = t[:, None]
+        inner1 = jnp.exp(
+            (
+                2 * t * alpha**2 * Ne_c
+                - 4 * t * u * Ne_c * alpha
+                - jnp.exp(t * alpha)
+                + 1
+            )
+            / Ne_c
+            / alpha
+            / 2
+        )
+        integral_inner1 = jnp.sum(
+            inner1 * _LEGENDRE_W_200[:, None] * (t0 - 0) / 2, axis=0
+        )
+        res1 = 1 / Ne_c * integral_inner1 / 2
         # If alpha is close to zero we use Taylor series
-        numerator = 4 * Ne1 + alpha * t * (4 * Ne1 - t)
-        exponent2 = -t * (4 * Ne1 * u + 1) / (2 * Ne1)
-        res2 = numerator * jnp.exp(exponent2) / (8 * Ne1**2)
+        res2 = (-jnp.exp(-t0 * (4 * Ne_c * u + 1) / Ne_c / 2) + 1) / (4 * Ne_c * u + 1)
         return jnp.where(jnp.abs(alpha) < ALPHA_EPSILON, res2, res1)
 
     # There is a closed-form solution for this piece
@@ -138,20 +164,53 @@ def expected_ld_piecewise_exponential(
     u_col = u_points.flatten()
 
     # First integral: [0, t0]
-    times1 = (t0 - 0) / 2 * _LEGENDRE_X_200 + (t0 + 0) / 2
-    f_t_piece1 = S_ut_piece1(alpha, Ne_c, times1, u_col)
-    integral_piece1 = jnp.sum(
-        f_t_piece1 * _LEGENDRE_W_200[:, None] * (t0 - 0) / 2, axis=0
-    )
+    integral_piece1 = Su_piece1(alpha, Ne_c, t0, u_col)
     # Second integral: [t0, ∞)
     integral_piece2 = Su_piece2(alpha, Ne_c, Ne_a, t0, u_col)
-
     res_flat = integral_piece1 + integral_piece2
     res_matrix = res_flat.reshape(u_points.shape)
     res_per_bin = jnp.sum(res_matrix * u_weights, axis=1)
     if sample_size is not None:
         return correct_ld_finite_sample(res_per_bin, sample_size)
     return res_per_bin
+
+
+@jax.jit
+def expected_sample_heterozygosity_piecewise_exponential(Ne_c, Ne_a, t0, alpha, mu):
+    """
+    Compute the expected sample heterozygosity under a two-phase exponential demography.
+
+    Args:
+        Ne_c (float): Contemporary diploid effective population size.
+        Ne_a (float): Ancestral diploid effective population size.
+        t0 (float): Time of transition from exponential to constant phase.
+        alpha (float): Rate of change of Ne during the exponential phase.
+        mu (float):  Mutation rate per bp
+
+    Returns:
+        array: Expected sample heterozygosity values.
+    """
+    w = (t0 - 0) / 2 * _LEGENDRE_W_200
+    t = (t0 - 0) / 2 * _LEGENDRE_X_200 + (0 + t0) / 2
+    piece1 = sum(
+        w
+        * t
+        / Ne_c
+        * jnp.exp((2 * t * alpha**2 * Ne_c - jnp.exp(t * alpha) + 1) / alpha / Ne_c / 2)
+        / 2
+    )
+    piece2 = (2 * Ne_a + t0) * jnp.exp(-(-1 + jnp.exp(t0 * alpha)) / alpha / Ne_c / 2)
+    piece1_taylor = (
+        -2 * jnp.exp(-0.1e1 / Ne_c * t0 / 2) * Ne_c
+        - jnp.exp(-0.1e1 / Ne_c * t0 / 2) * t0
+        + 2 * Ne_c
+    )
+    piece2_taylor = (2 * Ne_a + t0) * jnp.exp(-1 / Ne_c * t0 / 2)
+    e_tmrca_nonzero = piece1 + piece2
+    e_tmrca_taylor = piece1_taylor + piece2_taylor
+    # If alpha is too close to zero
+    e_tmrca = jnp.where(jnp.abs(alpha) < 1e-7, e_tmrca_taylor, e_tmrca_nonzero)
+    return e_tmrca * 2 * mu
 
 
 @jax.jit
@@ -218,6 +277,67 @@ def expected_ld_exponential_carrying_capacity(
     if sample_size is not None:
         return correct_ld_finite_sample(res_per_bin, sample_size)
     return res_per_bin
+
+
+@jax.jit
+def expected_sample_heterozygosity_exponential_carrying_capacity(
+    Ne_c, Ne_a, alpha, t0, t1, mu
+):
+    """
+    Compute the expected sample heterozygosity under exponential growth followed by carrying capacity.
+
+    Args:
+        Ne_c (float): Contemporary diploid effective population size.
+        Ne_a (float): Ancestral diploid effective population size.
+        alpha (float): Rate of change of Ne during the exponential phase.
+        t0 (float): Time when population reaches carrying capacity.
+        t1 (float): Time when exponential phase begins.
+        mu (float):  Mutation rate per bp
+
+    Returns:
+        array: Expected sample heterozygosity values.
+    """
+    t = (t1 - t0) / 2 * _LEGENDRE_X_200 + (t0 + t1) / 2
+    w = (t1 - t0) / 2 * _LEGENDRE_W_200
+    int_piece = sum(
+        w
+        * (
+            t
+            * jnp.exp(
+                (
+                    -jnp.exp((t - t0) * alpha)
+                    + 1
+                    + (2 * t - 2 * t0) * Ne_c * alpha**2
+                    - t0 * alpha
+                )
+                / alpha
+                / Ne_c
+                / 2
+            )
+        )
+    )
+    expected_tmrca_nonzero = (
+        (
+            int_piece
+            + (2 * t1 + 4 * Ne_a)
+            * Ne_c
+            * jnp.exp(
+                -(t0 * alpha + jnp.exp(-(t0 - t1) * alpha) - 1) / alpha / Ne_c / 2
+            )
+            + (-4 * Ne_c**2 - 2 * Ne_c * t0) * jnp.exp(-1 / Ne_c * t0 / 2)
+            + 4 * Ne_c**2
+        )
+        / Ne_c
+        / 2
+    )
+    # Approaching to zero
+    expected_tmrca_taylor = (2 * Ne_a - 2 * Ne_c) * jnp.exp(
+        -1 / Ne_c * t1 / 2
+    ) + 2 * Ne_c
+    expected_tmrca = jnp.where(
+        jnp.abs(alpha) < ALPHA_EPSILON, expected_tmrca_taylor, expected_tmrca_nonzero
+    )
+    return expected_tmrca * 2 * mu
 
 
 @jax.jit
@@ -357,6 +477,62 @@ def expected_ld_secondary_introduction(
     if sample_size is not None:
         return correct_ld_finite_sample(res_per_bin, sample_size)
     return res_per_bin
+
+
+@jax.jit
+def expected_sample_heterozygosity_secondary_introduction(
+    Ne_c, Ne_f, Ne_a, t0, t1, migration_rate, mu
+):
+    """
+    Compute the expected sample heterozygosity under a three-phase island model with migration.
+
+    Args:
+        Ne_c (float): Contemporary diploid effective population size (migration activated).
+        Ne_f (float): Intermediate diploid effective population size (migration activated).
+        Ne_a (float): Ancestral diploid effective population size (no migration).
+        t0 (float): Time of transition from contemporary to migration phase.
+        t1 (float): Time of transition from migration to ancestral phase.
+        migration_rate (float): Migration rate during the intermediate phase.
+        mu (float):  Mutation rate per bp
+
+    Returns:
+        array: Expected sample heterozygosity values.
+    """
+    Nec, Nef, Nea, T1, T2, m = Ne_c, Ne_f, Ne_a, t0, t1, migration_rate
+    expected_tmrca = (
+        (
+            32
+            * (m * Nec + 0.1e1 / 0.2e1)
+            * (m * Nec + 0.1e1 / 0.4e1)
+            * (Nef * (Nea + Nef) * m + Nea / 2 - Nef / 2)
+            * jnp.exp(((-4 * Nef * T2 * m + T1 - T2) * Nec - Nef * T1) / Nec / Nef / 2)
+            + 64
+            * (m * Nec + 0.1e1 / 0.4e1)
+            * (m * Nef + 0.1e1 / 0.4e1)
+            * (-Nef + Nec)
+            * jnp.exp((-2 * m * (T1 + T2) * Nec - T1) / Nec / 2)
+            + 128
+            * (m * Nef + 0.1e1 / 0.2e1)
+            * (
+                -(m * Nec + 0.1e1 / 0.2e1)
+                * (-Nef + Nec)
+                * (Nea * m + 0.3e1 / 0.4e1)
+                * jnp.exp(-T1 * (4 * m * Nec + 1) / Nec / 2)
+                / 4
+                + (
+                    (-m * Nec - 0.1e1 / 0.4e1) * jnp.exp(-T2 * m)
+                    + (m * Nec + 0.1e1 / 0.2e1) * (Nea * m + 0.3e1 / 0.4e1)
+                )
+                * (m * Nef + 0.1e1 / 0.4e1)
+                * Nec
+            )
+        )
+        / (4 * m * Nec + 1)
+        / (2 * m * Nef + 1)
+        / (4 * m * Nef + 1)
+        / (2 * m * Nec + 1)
+    )
+    return expected_tmrca * 2 * mu
 
 
 def _process_chromosome_worker(args: Tuple) -> dict:
