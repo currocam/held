@@ -359,7 +359,7 @@ def expected_ld_secondary_introduction(
     return res_per_bin
 
 
-def _process_chromosome_worker(args: Tuple) -> NDArray:
+def _process_chromosome_worker(args: Tuple) -> dict:
     """Worker function for parallel chromosome simulation."""
     import msprime
 
@@ -404,7 +404,8 @@ def _process_chromosome_worker(args: Tuple) -> NDArray:
         genotypes[i] = variant.genotypes[0::2] + variant.genotypes[1::2]
 
     stats.update_batch(genotypes, positions_all, bins_obj)
-    return stats.finalize(bins_obj)[:, 0]
+    ld = stats.finalize(bins_obj)[:, 0]
+    return dict(ld=ld, diversity=mts.diversity())
 
 
 def simulate_from_msprime(
@@ -558,13 +559,12 @@ def simulate_from_msprime(
             )
         for ts in replicates:
             mts = msprime.sim_mutations(ts, rate=mutation_rate, random_seed=random_seed)
-            data.append(
-                ld_from_tree_sequence(mts, recombination_rate, left_bins, right_bins)[
-                    :, 0
-                ]
-            )
-
-    data_array = np.array(data)
+            ld = ld_from_tree_sequence(mts, recombination_rate, left_bins, right_bins)[
+                :, 0
+            ]
+            data.append(dict(ld=ld, diversity=mts.diversity()))
+    data_array = np.array([x["ld"] for x in data])
+    diversity = np.array([x["diversity"] for x in data])
     return {
         "mean": data_array.mean(axis=0),
         "std": data_array.std(axis=0, ddof=1),
@@ -573,4 +573,5 @@ def simulate_from_msprime(
         "sample_size": sample_size,
         "num_chromosomes": num_chromosomes,
         "data": data_array,
+        "diversity": diversity,
     }
