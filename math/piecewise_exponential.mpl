@@ -21,3 +21,11 @@ taylor_piece2_sim := convert(series(piece2_sim, alpha=0, 3), polynom);
 Python(taylor_piece2_sim);
 1 / (4 * u * Nea + 1) * math.exp(-t0 * (4 * Nec * u + 1) / Nec / 2) - 1 / (4 * u * Nea + 1) * math.exp(-t0 * (4 * Nec * u + 1) / Nec / 2) * t0 ** 2 / Nec * alpha / 4
 
+# With same TMRCA eq., we can derive expected TMRCA
+E_tmrca := int(t * tmrca1,  t = 0..t0) + int(t * tmrca2,  t = t0..infinity);
+E_tmrca_sim := simplify(E_tmrca) assuming t0>0, Nec>0, Nea>0, alpha!=0;
+Python(E_tmrca_sim);
+Nec * sympy.integrate(t * math.exp(-(2 * t * alpha ** 2 * Nec + math.exp(t * alpha) - 1) / Nec / alpha / 2), t == xrange(0,t0)) + (2 * Nea + t0) * math.exp(-(-1 + math.exp(t0 * alpha)) / alpha / Nec / 2)
+# Approaching to zero
+Python(simplify(convert(series(E_tmrca_sim, alpha=0, 2), polynom)));
+cg0 = (-4 * Nec ** 3 - 2 * Nec ** 2 * t0 + 2 * Nea + t0) * math.exp(-t0 / Nec / 2) + 4 * Nec ** 3

@@ -40,3 +40,11 @@ taylor_s_ut2 := simplify(convert(series(s_ut2, alpha=0, 2), polynom));
 Python(taylor_s_ut2);
 cg3 = 1 / Nec * math.exp(-t * (4 * u * Nec + 1) / Nec / 2) / 2
 
+# With same TMRCA eq., we can derive expected TMRCA
+E_tmrca := int(t * tmrca1,  t = 0..t0) + int(t * tmrca2,  t = t0..t1) + int(t * tmrca3,  t = t1..infinity);
+E_tmrca_sim := simplify(E_tmrca) assuming t0>0, t1>t0, Nec>0, Nea>0, alpha!=0;
+Python(E_tmrca_sim);
+(sympy.integrate(t * math.exp((-math.exp((t - t0) * alpha) + 1 + (2 * t - 2 * t0) * Nec * alpha ** 2 - t0 * alpha) / alpha / Nec / 2), t == xrange(t0,t1)) + (2 * t1 + 4 * Nea) * Nec * math.exp(-(t0 * alpha + math.exp(-(t0 - t1) * alpha) - 1) / alpha / Nec / 2) + (-4 * Nec ** 2 - 2 * Nec * t0) * math.exp(-1 / Nec * t0 / 2) + 4 * Nec ** 2) / Nec / 2
+# Approaching to zero
+Python(simplify(convert(series(E_tmrca_sim, alpha=0, 2), polynom)));
+(2 * Nea - 2 * Nec) * math.exp(-1 / Nec * t1 / 2) + 2 * Nec
