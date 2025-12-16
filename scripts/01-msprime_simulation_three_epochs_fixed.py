@@ -17,13 +17,16 @@ import msprime
 import numpy as np
 import pandas as pd
 
-NUM_WORKERS = 8
-RANDOM_SEED = 237273
+import jax
+jax.config.update("jax_enable_x64", True)
+
+NUM_WORKERS = 12
+RANDOM_SEED = 1761846837
 RECOMBINATION_RATE = 1e-8
-SEQUENCE_LENGTH = int(2e8)
+SEQUENCE_LENGTH = int(1e8)
 NUM_CHROMOSOMES = 50  # simulate 50 independent chromosomes
 SAMPLE_SIZE = 100
-NUM_MUTATIONS = 250_000
+NUM_MUTATIONS = 50_000
 MAF = 0.25
 
 
@@ -34,6 +37,9 @@ def allele_frequencies(ts, sample_sets=None):
 
     def f(x):
         return x / n
+
+    if ts.num_sites == 0:
+        return np.asarray([])
 
     return ts.sample_count_stat(
         sample_sets,
@@ -74,8 +80,9 @@ def worker(args):
         seed = rng.integers(1, 2**32 - 1, 1)
         ts = msprime.sim_mutations(ts, rate=mu, keep=True, random_seed=seed)
         freqs = allele_frequencies(ts).flatten()
-        mask = np.bitwise_and(freqs > MAF, freqs < (1 - MAF))
-        ts = ts.delete_sites(np.where(mask)[0])
+        mask = np.bitwise_or(freqs < MAF, freqs > (1 - MAF))
+        site_ids = np.asarray([site.id for site in ts.sites()])
+        ts = ts.delete_sites(site_ids[mask])
         mu = mu * 2
     # Discard excess
     num_exceeded = ts.num_sites - NUM_MUTATIONS
@@ -148,9 +155,15 @@ def analysis(Ne1, Ne2, Ne3, t1, t2):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("Ne1", type=float, help="Current effective population size (epoch 1)")
-    parser.add_argument("Ne2", type=float, help="Intermediate effective population size (epoch 2)")
-    parser.add_argument("Ne3", type=float, help="Ancestral effective population size (epoch 3)")
+    parser.add_argument(
+        "Ne1", type=float, help="Current effective population size (epoch 1)"
+    )
+    parser.add_argument(
+        "Ne2", type=float, help="Intermediate effective population size (epoch 2)"
+    )
+    parser.add_argument(
+        "Ne3", type=float, help="Ancestral effective population size (epoch 3)"
+    )
     parser.add_argument("t1", type=float, help="Time of first population size change")
     parser.add_argument("t2", type=float, help="Time of second population size change")
     parser.add_argument("outfile", type=str, help="Output pickle file")
@@ -158,4 +171,3 @@ if __name__ == "__main__":
 
     result = analysis(args.Ne1, args.Ne2, args.Ne3, args.t1, args.t2)
     pd.to_pickle(result, args.outfile)
-

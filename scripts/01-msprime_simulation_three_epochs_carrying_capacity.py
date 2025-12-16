@@ -17,13 +17,16 @@ import msprime
 import numpy as np
 import pandas as pd
 
-NUM_WORKERS = 8
-RANDOM_SEED = 237273
+import jax
+jax.config.update("jax_enable_x64", True)
+
+NUM_WORKERS = 16
+RANDOM_SEED = 1761846837
 RECOMBINATION_RATE = 1e-8
-SEQUENCE_LENGTH = int(2e8)
+SEQUENCE_LENGTH = int(1e8)
 NUM_CHROMOSOMES = 50  # simulate 50 independent chromosomes
 SAMPLE_SIZE = 100
-NUM_MUTATIONS = 250_000
+NUM_MUTATIONS = 50_000
 MAF = 0.25
 
 
@@ -34,6 +37,9 @@ def allele_frequencies(ts, sample_sets=None):
 
     def f(x):
         return x / n
+
+    if ts.num_sites == 0:
+        return np.asarray([])
 
     return ts.sample_count_stat(
         sample_sets,
@@ -74,8 +80,9 @@ def worker(args):
         seed = rng.integers(1, 2**32 - 1, 1)
         ts = msprime.sim_mutations(ts, rate=mu, keep=True, random_seed=seed)
         freqs = allele_frequencies(ts).flatten()
-        mask = np.bitwise_and(freqs > MAF, freqs < (1 - MAF))
-        ts = ts.delete_sites(np.where(mask)[0])
+        mask = np.bitwise_or(freqs < MAF, freqs > (1 - MAF))
+        site_ids = np.asarray([site.id for site in ts.sites()])
+        ts = ts.delete_sites(site_ids[mask])
         mu = mu * 2
     # Discard excess
     num_exceeded = ts.num_sites - NUM_MUTATIONS
@@ -155,16 +162,13 @@ if __name__ == "__main__":
         "Ne_c", type=float, help="Contemporary effective population size"
     )
     parser.add_argument("Ne_a", type=float, help="Ancestral effective population size")
-    parser.add_argument(
-        "alpha", type=float, help="Growth rate during exponential phase"
-    )
+    parser.add_argument("Ne_f", type=float, help="Founder effective population size")
     parser.add_argument(
         "t0", type=float, help="Time when population reaches carrying capacity"
     )
     parser.add_argument("t1", type=float, help="Time when exponential phase begins")
     parser.add_argument("outfile", type=str, help="Output pickle file")
     args = parser.parse_args()
-
-    result = analysis(args.Ne_c, args.Ne_a, args.alpha, args.t0, args.t1)
+    alpha = (np.log(args.Ne_c) - np.log(args.Ne_f)) / (args.t1-args.t0)
+    result = analysis(args.Ne_c, args.Ne_a, alpha, args.t0, args.t1)
     pd.to_pickle(result, args.outfile)
-

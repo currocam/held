@@ -4,7 +4,8 @@
 # dependencies = [
 #     "held",
 #     "msprime==1.3.4",
-#     "pandas==2.3.3",
+#     "msprime==1.3.4",
+#     "optimistix==0.0.11",
 # ]
 #
 # [tool.uv.sources]
@@ -20,83 +21,13 @@ import pandas as pd
 import jax
 jax.config.update("jax_enable_x64", True)
 
-NUM_WORKERS = 12
-RANDOM_SEED = 1761846837
 RECOMBINATION_RATE = 1e-8
+MUTATION_RATE = 1e-8
 SEQUENCE_LENGTH = int(1e8)
-NUM_CHROMOSOMES = 50  # simulate 50 independent chromosomes
-SAMPLE_SIZE = 100
-NUM_MUTATIONS = 50_000
 MAF = 0.25
 
+Ne = 10_000
 
-def allele_frequencies(ts, sample_sets=None):
-    if sample_sets is None:
-        sample_sets = [ts.samples()]
-    n = np.array([len(x) for x in sample_sets])
-
-    def f(x):
-        return x / n
-
-    if ts.num_sites == 0:
-        return np.asarray([])
-
-    return ts.sample_count_stat(
-        sample_sets,
-        f,
-        len(sample_sets),
-        windows="sites",
-        polarised=True,
-        mode="site",
-        strict=False,
-        span_normalise=False,
-    )
-
-
-def worker(args):
-    """Worker function for parallel chromosome simulation."""
-    import msprime
-
-    (
-        seed,
-        sample_size,
-        demes_graph,
-        sequence_length,
-        recombination_rate,
-    ) = args
-
-    # Reconstruct demography from demes graph
-    demography = msprime.Demography.from_demes(demes_graph)
-    ts = msprime.sim_ancestry(
-        samples=sample_size,
-        demography=demography,
-        sequence_length=sequence_length,
-        recombination_rate=recombination_rate,
-        random_seed=seed,
-    )
-    mu = 1e-15
-    rng = np.random.default_rng(seed)
-    while ts.num_sites < NUM_MUTATIONS:
-        seed = rng.integers(1, 2**32 - 1, 1)
-        ts = msprime.sim_mutations(ts, rate=mu, keep=True, random_seed=seed)
-        freqs = allele_frequencies(ts).flatten()
-        mask = np.bitwise_or(freqs < MAF, freqs > (1 - MAF))
-        site_ids = np.asarray([site.id for site in ts.sites()])
-        ts = ts.delete_sites(site_ids[mask])
-        mu = mu * 2
-    # Discard excess
-    num_exceeded = ts.num_sites - NUM_MUTATIONS
-    site_ids = [site.id for site in ts.sites()]
-    discard_ids = rng.choice(site_ids, num_exceeded, replace=False)
-    mts = ts.delete_sites(discard_ids)
-    # Process the tree sequence
-    return held.ld_from_tree_sequence(
-        ts=mts,
-        recombination_rate=recombination_rate,
-    )[:, 0]
-
-
-def analysis(Ne):
     demo = msprime.Demography.isolated_model([Ne])
     demes_graph = demo.to_demes()
     import multiprocess as mp

@@ -8,6 +8,8 @@ rule all:
     input:
         "plots/00-benchmark_ld_compute.pdf",
         "plots/01-msprime_simulation_prediction/all.pdf",
+        "plots/02-msprime_simulation_secondary_introduction/scenario_1.pdf",
+
 
 rule prediction_plot:
     input:
@@ -39,7 +41,7 @@ rule prediction_plot:
         ),
         # Carrying capacity
         expand(
-            "results/pickles/msprime/carrying_capacity/{Ne_c}_{Ne_a}_{t0}_{t1}_{Ne_f}.pkl",
+            "results/pickles/msprime/carrying_capacity/{Ne_c}_{Ne_a}_{Ne_f}_{t0}_{t1}.pkl",
             Ne_c=[5000],
             Ne_a=[10_000],
             t0=[25, 50],
@@ -77,6 +79,21 @@ rule prediction_plot:
         #./{input.script[1]}
         """
 
+rule prediction_carrying_capacity_fixed:
+    input:
+        script="scripts/01-msprime_simulation_three_epochs_carrying_capacity.py",
+    output:
+        "results/pickles/msprime/carrying_capacity/{Ne_c}_{Ne_a}_{Ne_f}_{t0}_{t1}.pkl",
+    envmodules:
+        ENVMODULES,
+    threads: 16
+    localrule: False
+    shell:
+        """
+        export UV_CACHE_DIR="{UV_TMPDIR}"
+        {UV_BINARY} -n run --refresh --script {input.script} {wildcards.Ne_c} {wildcards.Ne_a} {wildcards.Ne_f} {wildcards.t0} {wildcards.t1} {output}
+        """
+        
 rule prediction_three_epochs_fixed:
     input:
         script="scripts/01-msprime_simulation_three_epochs_fixed.py",
@@ -84,7 +101,7 @@ rule prediction_three_epochs_fixed:
         "results/pickles/msprime/three_epochs_fixed/{Ne_1}_{Ne_2}_{Ne_3}_{t1}_{t2}.pkl",
     envmodules:
         ENVMODULES,
-    threads: 8
+    threads: 12
     localrule: False
     shell:
         """
@@ -100,7 +117,7 @@ rule prediction_constant_fixed:
         "results/pickles/msprime/constant_fixed/{Ne}.pkl",
     envmodules:
         ENVMODULES,
-    threads: 8
+    threads: 12
     localrule: False
     shell:
         """
@@ -116,7 +133,7 @@ rule prediction_exponential_fixed:
         "results/pickles/msprime/exponential_fixed/{Ne_c}_{Ne_a}_{t0}.pkl",
     envmodules:
         ENVMODULES,
-    threads: 8
+    threads: 12
     localrule: False
     shell:
         """
@@ -132,7 +149,7 @@ rule prediction_invasion_fixed:
         "results/pickles/msprime/invasion_fixed/{Ne_c}_{Ne_a}_{t0}_{Ne_f}.pkl",
     envmodules:
         ENVMODULES,
-    threads: 8
+    threads: 12
     localrule: False
     shell:
         """
@@ -179,6 +196,18 @@ rule plot_secondary_fixed:
             t_1=[50],
             migration=["low", "high"],
         ),
+        script="plots/02-msprime_simulation_secondary_introduction.py",
+    output:
+        expand(
+            "plots/02-msprime_simulation_secondary_introduction/scenario_{i}.pdf",
+            i=range(1, 5),
+        ),
+    localrule: True
+    shell:
+        """
+        export UV_CACHE_DIR="{UV_TMPDIR}"
+        ./{input.script}
+        """
 
 
 rule prediction_secondary_fixed:
@@ -188,7 +217,7 @@ rule prediction_secondary_fixed:
         "results/pickles/msprime/secondary_introduction/{Ne_c}_{Ne_f}_{Ne_a}_{t_0}_{t_1}_{migration}.pkl",
     envmodules:
         ENVMODULES,
-    threads: 8
+    threads: 12
     localrule: False
     params:
         migration_rate=lambda wildcards: dict(low=0.0005, high=0.01)[
@@ -198,25 +227,4 @@ rule prediction_secondary_fixed:
         """
         export UV_CACHE_DIR="{UV_TMPDIR}"
         {UV_BINARY} -n run --refresh --script {input.script} {wildcards.Ne_c} {wildcards.Ne_f} {wildcards.Ne_a} {wildcards.t_0} {wildcards.t_1} {params.migration_rate} {output}
-        """
-
-
-rule prediction_carrying_capacity_fixed:
-    input:
-        script="scripts/01-msprime_simulation_three_epochs_carrying_capacity.py",
-    output:
-        "results/pickles/msprime/carrying_capacity/{Ne_c}_{Ne_a}_{t0}_{t1}_{Ne_f}.pkl",
-    envmodules:
-        ENVMODULES,
-    threads: 8
-    localrule: False
-    params:
-        alpha=lambda wildcards: (
-            math.log(float(wildcards["Ne_c"])) - math.log(float(wildcards["Ne_f"]))
-        )
-        / float(wildcards["t0"]),
-    shell:
-        """
-        export UV_CACHE_DIR="{UV_TMPDIR}"
-        {UV_BINARY} -n run --refresh --script {input.script} {wildcards.Ne_c} {wildcards.Ne_a} {params.alpha} {wildcards.t0} {wildcards.t1} {output}
         """
