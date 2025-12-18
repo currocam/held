@@ -11,7 +11,7 @@ from . import held
 from .ld import _construct_bins
 
 
-def gauss(a, b, n=100):
+def gauss(a, b, n=10):
     """
     Compute nodes and weights for Gaussian quadrature over [a, b].
 
@@ -88,7 +88,7 @@ def expected_sample_heterozygosity_constant(population_size, mu):
 
 
 # Pre-compute quadrature rules for expected_ld_piecewise_exponential
-_LEGENDRE_X_200, _LEGENDRE_W_200 = np.polynomial.legendre.leggauss(200)
+_LEGENDRE_X_200, _LEGENDRE_W_200 = np.polynomial.legendre.leggauss(50)
 _LEGENDRE_X_200 = jnp.asarray(_LEGENDRE_X_200)
 _LEGENDRE_W_200 = jnp.asarray(_LEGENDRE_W_200)
 
@@ -158,9 +158,9 @@ def expected_ld_piecewise_exponential(
         # fmt: on
         return jnp.where(jnp.abs(alpha) < ALPHA_EPSILON, res2, res1)
 
-    # Numerical integration using pre-computed Legendre quadrature (15 points for time, 10 for bins)
-    u_points = jnp.array([gauss(a, b, 100)[0] for (a, b) in zip(u_i, u_j)])
-    u_weights = jnp.array([gauss(a, b, 100)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
+    # Numerical integration using pre-computed Legendre quadrature
+    u_points = jnp.array([gauss(a, b, 10)[0] for (a, b) in zip(u_i, u_j)])
+    u_weights = jnp.array([gauss(a, b, 10)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
     u_col = u_points.flatten()
 
     # First integral: [0, t0]
@@ -242,9 +242,9 @@ def expected_ld_exponential_carrying_capacity(
     """
     u_i = jnp.asarray(left_bins)
     u_j = jnp.asarray(right_bins)
-    # Numerical integration using pre-computed Legendre quadrature (15 points for time, 10 for bins)
-    u_points = jnp.array([gauss(a, b, 100)[0] for (a, b) in zip(u_i, u_j)])
-    u_weights = jnp.array([gauss(a, b, 100)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
+    # Numerical integration using pre-computed Legendre quadrature
+    u_points = jnp.array([gauss(a, b, 10)[0] for (a, b) in zip(u_i, u_j)])
+    u_weights = jnp.array([gauss(a, b, 10)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
     u = u_points.flatten()
     # Auto-generated code
     # fmt: off
@@ -390,8 +390,8 @@ def expected_ld_piecewise_constant(
         return jnp.exp(-2 * t * u - Gamma) / (2 * Ne)
 
     # Prepare quadrature for u
-    u_points = jnp.array([gauss(a, b, 100)[0] for (a, b) in zip(u_i, u_j)])
-    u_weights = jnp.array([gauss(a, b, 100)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
+    u_points = jnp.array([gauss(a, b, 10)[0] for (a, b) in zip(u_i, u_j)])
+    u_weights = jnp.array([gauss(a, b, 10)[1] / (b - a) for (a, b) in zip(u_i, u_j)])
     u_col = u_points.flatten()
 
     # Compute integrals for each epoch

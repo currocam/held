@@ -5,6 +5,54 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+LEFT_BINS = np.asarray(
+    [
+        0.005,
+        0.01,
+        0.015,
+        0.02,
+        0.025,
+        0.03,
+        0.035,
+        0.04,
+        0.045,
+        0.05,
+        0.055,
+        0.06,
+        0.065,
+        0.07,
+        0.075,
+        0.08,
+        0.085,
+        0.09,
+        0.095,
+    ]
+)
+RIGHT_BINS = np.asarray(
+    [
+        0.01,
+        0.015,
+        0.02,
+        0.025,
+        0.03,
+        0.035,
+        0.04,
+        0.045,
+        0.05,
+        0.055,
+        0.06,
+        0.065,
+        0.07,
+        0.075,
+        0.08,
+        0.085,
+        0.09,
+        0.095,
+        0.1,
+    ]
+)
+NUM_BINS = 19
+
 
 def test_expected_ld_constant():
     """Test that expected_ld_constant runs without errors and returns positive values."""
@@ -13,25 +61,19 @@ def test_expected_ld_constant():
     # Random population size between 1,000 and 100,000
     population_size = rng.uniform(1000, 100000)
 
-    # Random bins
-    left_bins = jnp.array([0.0001, 0.1, 0.2, 0.3])
-    right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
-
     # Random sample size between 10 and 100
     sample_size = rng.integers(10, 100)
 
     # Test without sample size correction
-    result = held.expected_ld_constant(population_size, left_bins, right_bins)
-    assert result.shape == (4,), f"Expected shape (4,), got {result.shape}"
+    result = held.expected_ld_constant(population_size, LEFT_BINS, RIGHT_BINS)
+    assert result.shape == (NUM_BINS,)
     assert jnp.all(result > 0), "All LD values should be strictly greater than zero"
 
     # Test with sample size correction
     result_corrected = held.expected_ld_constant(
-        population_size, left_bins, right_bins, sample_size=sample_size
+        population_size, LEFT_BINS, RIGHT_BINS, sample_size=sample_size
     )
-    assert result_corrected.shape == (4,), (
-        f"Expected shape (4,), got {result_corrected.shape}"
-    )
+    assert result_corrected.shape == (NUM_BINS,)
     assert jnp.all(result_corrected > 0), (
         "All corrected LD values should be strictly greater than zero"
     )
@@ -51,27 +93,21 @@ def test_expected_ld_piecewise_exponential():
     # Random growth rate between -0.01 and 0.01
     alpha = rng.uniform(-0.01, 0.01)
 
-    # Random bins
-    left_bins = jnp.array([0.001, 0.1, 0.2, 0.3])
-    right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
-
     # Random sample size between 10 and 100
     sample_size = rng.integers(10, 100)
 
     # Test without sample size correction
     result = held.expected_ld_piecewise_exponential(
-        Ne_c, Ne_a, t0, alpha, left_bins, right_bins
+        Ne_c, Ne_a, t0, alpha, LEFT_BINS, RIGHT_BINS
     )
-    assert result.shape == (4,), f"Expected shape (4,), got {result.shape}"
+    assert result.shape == (NUM_BINS,)
     assert jnp.all(result > 0), "All LD values should be strictly greater than zero"
 
     # Test with sample size correction
     result_corrected = held.expected_ld_piecewise_exponential(
-        Ne_c, Ne_a, t0, alpha, left_bins, right_bins, sample_size=sample_size
+        Ne_c, Ne_a, t0, alpha, LEFT_BINS, RIGHT_BINS, sample_size=sample_size
     )
-    assert result_corrected.shape == (4,), (
-        f"Expected shape (4,), got {result_corrected.shape}"
-    )
+    assert result_corrected.shape == (NUM_BINS,)
     assert jnp.all(result_corrected > 0), (
         "All corrected LD values should be strictly greater than zero"
     )
@@ -92,27 +128,21 @@ def test_expected_ld_exponential_carrying_capacity():
     t0 = rng.uniform(10, 80)
     t1 = rng.uniform(t0 + 1, t0 + 40)  # t1 > t0
 
-    # Random bins
-    left_bins = jnp.array([0.001, 0.1, 0.2, 0.3])
-    right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
-
     # Random sample size between 10 and 100
     sample_size = rng.integers(10, 100)
 
     # Test without sample size correction
     result = held.expected_ld_exponential_carrying_capacity(
-        Ne_c, Ne_a, alpha, t0, t1, left_bins, right_bins
+        Ne_c, Ne_a, alpha, t0, t1, LEFT_BINS, RIGHT_BINS
     )
-    assert result.shape == (4,), f"Expected shape (4,), got {result.shape}"
+    assert result.shape == (NUM_BINS,)
     assert jnp.all(result > 0), "All LD values should be strictly greater than zero"
 
     # Test with sample size correction
     result_corrected = held.expected_ld_exponential_carrying_capacity(
-        Ne_c, Ne_a, alpha, t0, t1, left_bins, right_bins, sample_size=sample_size
+        Ne_c, Ne_a, alpha, t0, t1, LEFT_BINS, RIGHT_BINS, sample_size=sample_size
     )
-    assert result_corrected.shape == (4,), (
-        f"Expected shape (4,), got {result_corrected.shape}"
-    )
+    assert result_corrected.shape == (NUM_BINS,)
     assert jnp.all(result_corrected > 0), (
         "All corrected LD values should be strictly greater than zero"
     )
@@ -122,17 +152,13 @@ def test_expected_ld_piecewise_constant():
     """Test piecewise constant population size model with multiple epochs."""
     rng = np.random.default_rng()
 
-    # Random bins
-    left_bins = jnp.array([0.001, 0.1, 0.2, 0.3])
-    right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
-
     # Test 2-epoch model with random values
     Ne_values_2 = jnp.array([rng.uniform(5000, 15000), rng.uniform(15000, 25000)])
     t_boundaries_2 = jnp.array([rng.uniform(1, 100)])
     result_2 = held.expected_ld_piecewise_constant(
-        Ne_values_2, t_boundaries_2, left_bins, right_bins
+        Ne_values_2, t_boundaries_2, LEFT_BINS, RIGHT_BINS
     )
-    assert result_2.shape == (4,), f"Expected shape (4,), got {result_2.shape}"
+    assert result_2.shape == (NUM_BINS,)
     assert jnp.all(result_2 > 0), "All LD values should be strictly greater than zero"
 
     # Test 3-epoch model with random values
@@ -141,9 +167,9 @@ def test_expected_ld_piecewise_constant():
     )
     t_boundaries_3 = jnp.array([rng.uniform(1, 50), rng.uniform(50, 100)])
     result_3 = held.expected_ld_piecewise_constant(
-        Ne_values_3, t_boundaries_3, left_bins, right_bins
+        Ne_values_3, t_boundaries_3, LEFT_BINS, RIGHT_BINS
     )
-    assert result_3.shape == (4,), f"Expected shape (4,), got {result_3.shape}"
+    assert result_3.shape == (NUM_BINS,)
     assert jnp.all(result_3 > 0), "All LD values should be strictly greater than zero"
 
     # Test 4-epoch model with random values
@@ -159,28 +185,26 @@ def test_expected_ld_piecewise_constant():
         [rng.uniform(1, 35), rng.uniform(35, 80), rng.uniform(80, 200)]
     )
     result_4 = held.expected_ld_piecewise_constant(
-        Ne_values_4, t_boundaries_4, left_bins, right_bins
+        Ne_values_4, t_boundaries_4, LEFT_BINS, RIGHT_BINS
     )
-    assert result_4.shape == (4,), f"Expected shape (4,), got {result_4.shape}"
+    assert result_4.shape == (NUM_BINS,)
     assert jnp.all(result_4 > 0), "All LD values should be strictly greater than zero"
 
     # Test with sample size correction using random value
     sample_size = rng.integers(30, 70)
     result_corrected = held.expected_ld_piecewise_constant(
-        Ne_values_2, t_boundaries_2, left_bins, right_bins, sample_size=sample_size
+        Ne_values_2, t_boundaries_2, LEFT_BINS, RIGHT_BINS, sample_size=sample_size
     )
-    assert result_corrected.shape == (4,), (
-        f"Expected shape (4,), got {result_corrected.shape}"
-    )
+    assert result_corrected.shape == (NUM_BINS,)
     assert jnp.all(result_corrected > 0), (
         "All corrected LD values should be strictly greater than zero"
     )
 
     # Test that constant model matches single epoch
     Ne_constant = 10000.0
-    result_constant_old = held.expected_ld_constant(Ne_constant, left_bins, right_bins)
+    result_constant_old = held.expected_ld_constant(Ne_constant, LEFT_BINS, RIGHT_BINS)
     result_constant_new = held.expected_ld_piecewise_constant(
-        jnp.array([Ne_constant]), jnp.array([]), left_bins, right_bins
+        jnp.array([Ne_constant]), jnp.array([]), LEFT_BINS, RIGHT_BINS
     )
     # Warning: we reduce tolerance because for a single epoch we have a closed form solution
     assert jnp.allclose(result_constant_old, result_constant_new, rtol=0.01), (
@@ -194,10 +218,10 @@ def test_expected_ld_piecewise_constant():
     alpha = 0.0
 
     result_exponential = held.expected_ld_piecewise_exponential(
-        Ne_c, Ne_a, t0, alpha, left_bins, right_bins
+        Ne_c, Ne_a, t0, alpha, LEFT_BINS, RIGHT_BINS
     )
     result_constant_pw = held.expected_ld_piecewise_constant(
-        jnp.array([Ne_c, Ne_a]), jnp.array([t0]), left_bins, right_bins
+        jnp.array([Ne_c, Ne_a]), jnp.array([t0]), LEFT_BINS, RIGHT_BINS
     )
     assert jnp.allclose(result_exponential, result_constant_pw, rtol=1e-4), (
         "Piecewise constant should match piecewise exponential with alpha=0"
@@ -220,18 +244,14 @@ def test_expected_ld_secondary_introduction():
     # Random migration rate between 0.0001 and 0.001
     migration_rate = rng.uniform(0.0001, 0.01)
 
-    # Random bins
-    left_bins = jnp.array([0.001, 0.1, 0.2, 0.3])
-    right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
-
     # Random sample size between 10 and 100
     sample_size = rng.integers(10, 100)
 
     # Test without sample size correction
     result = held.expected_ld_secondary_introduction(
-        Ne_c, Ne_f, Ne_a, t0, t1, migration_rate, left_bins, right_bins
+        Ne_c, Ne_f, Ne_a, t0, t1, migration_rate, LEFT_BINS, RIGHT_BINS
     )
-    assert result.shape == (4,), f"Expected shape (4,), got {result.shape}"
+    assert result.shape == (NUM_BINS,)
     assert jnp.all(result > 0), "All LD values should be strictly greater than zero"
     assert jnp.all(jnp.isfinite(result)), "All LD values should be finite"
 
@@ -243,13 +263,11 @@ def test_expected_ld_secondary_introduction():
         t0,
         t1,
         migration_rate,
-        left_bins,
-        right_bins,
+        LEFT_BINS,
+        RIGHT_BINS,
         sample_size=sample_size,
     )
-    assert result_corrected.shape == (4,), (
-        f"Expected shape (4,), got {result_corrected.shape}"
-    )
+    assert result_corrected.shape == (NUM_BINS,)
     assert jnp.all(result_corrected > 0), (
         "All corrected LD values should be strictly greater than zero"
     )
@@ -258,7 +276,7 @@ def test_expected_ld_secondary_introduction():
     )
     # Compare with panmintic population size
     Ne_constant = 10000.0
-    result_constant_old = held.expected_ld_constant(Ne_constant, left_bins, right_bins)
+    result_constant_old = held.expected_ld_constant(Ne_constant, LEFT_BINS, RIGHT_BINS)
     # With a very small migration rate, both predictions should be close
     epsilon_migration = 1e-10
     result_constant_new = held.expected_ld_secondary_introduction(
@@ -268,8 +286,8 @@ def test_expected_ld_secondary_introduction():
         10,
         20,
         epsilon_migration,
-        left_bins,
-        right_bins,
+        LEFT_BINS,
+        RIGHT_BINS,
     )
     # Warning: we reduce tolerance because for a single epoch we have a closed form solution
     assert jnp.allclose(result_constant_old, result_constant_new, rtol=0.001), (
@@ -284,8 +302,8 @@ def test_expected_ld_secondary_introduction():
         10,
         20,
         epsilon_migration_large,
-        left_bins,
-        right_bins,
+        LEFT_BINS,
+        RIGHT_BINS,
     )
     assert not jnp.allclose(
         result_constant_old, result_constant_new_large, rtol=0.001
@@ -296,14 +314,10 @@ def test_derivatives_computable():
     """Test that derivatives can be computed for MLE optimization."""
     rng = np.random.default_rng()
 
-    # Random bins
-    left_bins = jnp.array([0.0001, 0.1, 0.2, 0.3])
-    right_bins = jnp.array([0.1, 0.2, 0.3, 0.4])
-
     # Test gradient of constant model
     population_size = rng.uniform(5000, 15000)
     grad_fn = jax.grad(
-        lambda Ne: jnp.sum(held.expected_ld_constant(Ne, left_bins, right_bins))
+        lambda Ne: jnp.sum(held.expected_ld_constant(Ne, LEFT_BINS, RIGHT_BINS))
     )
     gradient = grad_fn(population_size)
     assert jnp.isfinite(gradient), "Gradient should be finite for constant model"
@@ -317,28 +331,28 @@ def test_derivatives_computable():
     grad_fn_Ne_c = jax.grad(
         lambda x: jnp.sum(
             held.expected_ld_piecewise_exponential(
-                x, Ne_a, t0, alpha, left_bins, right_bins
+                x, Ne_a, t0, alpha, LEFT_BINS, RIGHT_BINS
             )
         )
     )
     grad_fn_Ne_a = jax.grad(
         lambda x: jnp.sum(
             held.expected_ld_piecewise_exponential(
-                Ne_c, x, t0, alpha, left_bins, right_bins
+                Ne_c, x, t0, alpha, LEFT_BINS, RIGHT_BINS
             )
         )
     )
     grad_fn_t0 = jax.grad(
         lambda x: jnp.sum(
             held.expected_ld_piecewise_exponential(
-                Ne_c, Ne_a, x, alpha, left_bins, right_bins
+                Ne_c, Ne_a, x, alpha, LEFT_BINS, RIGHT_BINS
             )
         )
     )
     grad_fn_alpha = jax.grad(
         lambda x: jnp.sum(
             held.expected_ld_piecewise_exponential(
-                Ne_c, Ne_a, t0, x, left_bins, right_bins
+                Ne_c, Ne_a, t0, x, LEFT_BINS, RIGHT_BINS
             )
         )
     )
@@ -359,12 +373,12 @@ def test_derivatives_computable():
 
     grad_fn_Ne = jax.grad(
         lambda x: jnp.sum(
-            held.expected_ld_piecewise_constant(x, t_boundaries, left_bins, right_bins)
+            held.expected_ld_piecewise_constant(x, t_boundaries, LEFT_BINS, RIGHT_BINS)
         )
     )
     grad_fn_t = jax.grad(
         lambda x: jnp.sum(
-            held.expected_ld_piecewise_constant(Ne_values, x, left_bins, right_bins)
+            held.expected_ld_piecewise_constant(Ne_values, x, LEFT_BINS, RIGHT_BINS)
         )
     )
 
@@ -395,42 +409,42 @@ def test_derivatives_computable():
     grad_fn_Ne_c = jax.grad(
         lambda x: jnp.sum(
             held.expected_ld_secondary_introduction(
-                x, Ne_f, Ne_a, t0, t1, migration_rate, left_bins, right_bins
+                x, Ne_f, Ne_a, t0, t1, migration_rate, LEFT_BINS, RIGHT_BINS
             )
         )
     )
     grad_fn_Ne_f = jax.grad(
         lambda x: jnp.sum(
             held.expected_ld_secondary_introduction(
-                Ne_c, x, Ne_a, t0, t1, migration_rate, left_bins, right_bins
+                Ne_c, x, Ne_a, t0, t1, migration_rate, LEFT_BINS, RIGHT_BINS
             )
         )
     )
     grad_fn_Ne_a = jax.grad(
         lambda x: jnp.sum(
             held.expected_ld_secondary_introduction(
-                Ne_c, Ne_f, x, t0, t1, migration_rate, left_bins, right_bins
+                Ne_c, Ne_f, x, t0, t1, migration_rate, LEFT_BINS, RIGHT_BINS
             )
         )
     )
     grad_fn_t0 = jax.grad(
         lambda x: jnp.sum(
             held.expected_ld_secondary_introduction(
-                Ne_c, Ne_f, Ne_a, x, t1, migration_rate, left_bins, right_bins
+                Ne_c, Ne_f, Ne_a, x, t1, migration_rate, LEFT_BINS, RIGHT_BINS
             )
         )
     )
     grad_fn_t1 = jax.grad(
         lambda x: jnp.sum(
             held.expected_ld_secondary_introduction(
-                Ne_c, Ne_f, Ne_a, t0, x, migration_rate, left_bins, right_bins
+                Ne_c, Ne_f, Ne_a, t0, x, migration_rate, LEFT_BINS, RIGHT_BINS
             )
         )
     )
     grad_fn_m = jax.grad(
         lambda x: jnp.sum(
             held.expected_ld_secondary_introduction(
-                Ne_c, Ne_f, Ne_a, t0, t1, x, left_bins, right_bins
+                Ne_c, Ne_f, Ne_a, t0, t1, x, LEFT_BINS, RIGHT_BINS
             )
         )
     )
