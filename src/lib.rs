@@ -96,6 +96,9 @@ impl RollingMap {
     #[inline]
     fn insert(&mut self, position: i32, genotypes: &[i32]) {
         let position = position as u64;
+        if genotypes.iter().any(|&gt| gt > 2 || gt <= 0) {
+            return;
+        }
         // Compute MAF
         let total: i32 = genotypes.iter().sum();
         let n = genotypes.len();
