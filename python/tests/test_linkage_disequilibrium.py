@@ -37,6 +37,9 @@ def compute_ld_stats_python(genotypes, positions, bins):
     standardized = []
     valid_positions = []
     for i in range(n_variants):
+        # Check for invalid genotypes
+        if np.any(genotypes[i] < 0) or np.any(genotypes[i] > 2):
+            continue
         std_geno = standardize_genotypes(genotypes[i])
         if std_geno is not None:
             standardized.append(std_geno)
@@ -148,7 +151,7 @@ def test_simple_case():
             )
 
 
-def test_maf_filtering():
+def test_filtering():
     genotypes = np.array(
         [
             [0, 0, 0, 0, 0, 0, 0, 0],  # pos 100, MAF=0.0
@@ -156,10 +159,14 @@ def test_maf_filtering():
             [1, 1, 1, 1, 1, 1, 1, 1],  # pos 300, MAF=0.5
             [0, 0, 0, 0, 0, 0, 0, 2],  # pos 400, MAF=0.125
             [0, 0, 0, 0, 1, 1, 2, 2],  # pos 500, MAF=0.375
+            [0, 0, 0, 0, 1, 1, 2, 3],  # Invalid because of 3
+            [3, 0, 0, 0, 1, 1, 2, 0],  # Invalid because of 3
+            [0, 0, 0, 0, 1, 1, -1, 0],  # Invalid because of -1
+            [3, 0, 0, 0, 1, 1, -2, 0],  # Invalid because of both
         ],
         dtype=np.int32,
     )
-    positions = np.array([100, 200, 300, 400, 500], dtype=np.int32)
+    positions = np.array([100, 200, 300, 400, 500, 600, 700, 800, 900], dtype=np.int32)
     bins = held.Bins([0.0, 100.0], [99.0, 300.0])
     stats = held.StreamingStats(2)
     stats.update_batch(genotypes, positions, bins)
