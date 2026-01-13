@@ -5,8 +5,9 @@ from typing import Any, Dict, Optional, Tuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from numpy.typing import NDArray
 from jax.scipy.special import exp1
+from numpy.typing import NDArray
+
 from . import held
 from .ld import _construct_bins
 
@@ -548,6 +549,7 @@ def _process_chromosome_worker(args: Tuple) -> dict:
         mutation_rate,
         left_bins_bp,
         right_bins_bp,
+        model,
     ) = args
 
     # Reconstruct demography from demes graph
@@ -559,6 +561,7 @@ def _process_chromosome_worker(args: Tuple) -> dict:
         sequence_length=sequence_length,
         recombination_rate=recombination_rate,
         random_seed=seed,
+        model=model,
     )
     mts = msprime.sim_mutations(ts, rate=mutation_rate, random_seed=seed)
 
@@ -596,6 +599,7 @@ def simulate_from_msprime(
     right_bins: Optional[NDArray] = None,
     progress_bar: bool = True,
     num_workers: int = 1,
+    model=None,
 ) -> Dict[str, Any]:
     """
     Simulate linkage disequilibrium data from msprime demographic models.
@@ -630,6 +634,8 @@ def simulate_from_msprime(
         Whether to display a progress bar. Default is True
     num_workers : int, optional
         Number of parallel workers. If > 1, uses multiprocessing. Default is 1
+    model : str, optional
+        The ancestry model to use (will be passed to msprime.sim_ancestry)
 
     Returns
     -------
@@ -689,6 +695,7 @@ def simulate_from_msprime(
                 mutation_rate,
                 left_bins_bp,
                 right_bins_bp,
+                model,
             )
             for seed in seeds
         ]
@@ -720,6 +727,7 @@ def simulate_from_msprime(
             recombination_rate=recombination_rate,
             num_replicates=num_chromosomes,
             random_seed=random_seed,
+            model=model,
         )
         data = []
         if progress_bar:
