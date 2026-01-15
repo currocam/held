@@ -94,7 +94,8 @@ _LEGENDRE_X_200 = jnp.asarray(_LEGENDRE_X_200)
 _LEGENDRE_W_200 = jnp.asarray(_LEGENDRE_W_200)
 
 # There's a singularity at alpha = 0. We do branch here if epsilon is small
-ALPHA_EPSILON = 1e-7
+ALPHA_EPSILON = 1e-5
+SIGMA_SLOPE = 2
 
 
 @jax.jit
@@ -144,20 +145,24 @@ def expected_ld_piecewise_exponential(
         integral_inner1 = jnp.sum(
             inner1 * _LEGENDRE_W_200[:, None] * (t0 - 0) / 2, axis=0
         )
-        res1 = 1 / Ne_c * integral_inner1 / 2
+        expected_nonzero = 1 / Ne_c * integral_inner1 / 2
         # If alpha is close to zero we use Taylor series
-        res2 = (-jnp.exp(-t0 * (4 * Ne_c * u + 1) / Ne_c / 2) + 1) / (4 * Ne_c * u + 1)
-        return jnp.where(jnp.abs(alpha) < ALPHA_EPSILON, res2, res1)
+        expected_taylor = (-jnp.exp(-t0 * (4 * Ne_c * u + 1) / Ne_c / 2) + 1) / (
+            4 * Ne_c * u + 1
+        )
+        weight = jax.nn.sigmoid(SIGMA_SLOPE * (ALPHA_EPSILON - jnp.abs(alpha)))
+        return weight * expected_nonzero + (1 - weight) * expected_taylor
 
     # There is a closed-form solution for this piece
     def Su_piece2(alpha, Nec, Nea, t0, u):
         # Auto-generated code
         # fmt: off
-        res1 = 1 / (4 * u * Nea + 1) * jnp.exp(-(4 * u * Nec * alpha * t0 + jnp.exp(t0 * alpha) - 1) / Nec / alpha / 2)
+        expected_nonzero = 1 / (4 * u * Nea + 1) * jnp.exp(-(4 * u * Nec * alpha * t0 + jnp.exp(t0 * alpha) - 1) / Nec / alpha / 2)
         # If alpha is close to zero we use Taylor expansion for alpha=0
-        res2 = 1 / (4 * u * Nea + 1) * jnp.exp(-t0 * (4 * Nec * u + 1) / Nec / 2) - 1 / (4 * u * Nea + 1) * jnp.exp(-t0 * (4 * Nec * u + 1) / Nec / 2) * t0 ** 2 / Nec * alpha / 4
+        expected_taylor = 1 / (4 * u * Nea + 1) * jnp.exp(-t0 * (4 * Nec * u + 1) / Nec / 2) - 1 / (4 * u * Nea + 1) * jnp.exp(-t0 * (4 * Nec * u + 1) / Nec / 2) * t0 ** 2 / Nec * alpha / 4
         # fmt: on
-        return jnp.where(jnp.abs(alpha) < ALPHA_EPSILON, res2, res1)
+        weight = jax.nn.sigmoid(SIGMA_SLOPE * (ALPHA_EPSILON - jnp.abs(alpha)))
+        return weight * expected_nonzero + (1 - weight) * expected_taylor
 
     # Numerical integration using pre-computed Legendre quadrature
     u_points = jnp.array([gauss(a, b, 10)[0] for (a, b) in zip(u_i, u_j)])
@@ -210,7 +215,8 @@ def expected_sample_heterozygosity_piecewise_exponential(Ne_c, Ne_a, t0, alpha, 
     e_tmrca_nonzero = piece1 + piece2
     e_tmrca_taylor = piece1_taylor + piece2_taylor
     # If alpha is too close to zero
-    e_tmrca = jnp.where(jnp.abs(alpha) < 1e-7, e_tmrca_taylor, e_tmrca_nonzero)
+    weight = jax.nn.sigmoid(SIGMA_SLOPE * (ALPHA_EPSILON - jnp.abs(alpha)))
+    e_tmrca = weight * e_tmrca_nonzero + (1 - weight) * e_tmrca_taylor
     return e_tmrca * 2 * mu
 
 
@@ -255,9 +261,9 @@ def expected_ld_exponential_carrying_capacity(
     # There's a singularity at alpha=0
     piece3_nonzero = jnp.exp((1 - jnp.exp(-(t0 - t1) * alpha) - (4 * Nec * t1 * u + t0) * alpha) / alpha / Nec / 2) / (4 * u * Nea + 1)
     piece3_taylor = jnp.exp(-t1 * (4 * u * Nec + 1) / Nec / 2) / (4 * u * Nea + 1)
-    piece3 = jnp.where(
-        jnp.abs(alpha) < ALPHA_EPSILON, piece3_taylor, piece3_nonzero
-    )
+    weight = jax.nn.sigmoid(SIGMA_SLOPE * (ALPHA_EPSILON - jnp.abs(alpha)))
+    piece3 = weight * piece3_nonzero + (1 - weight) * piece3_taylor
+
     # Numerical integration [t0, t1]
     times2 = (t1 - t0) / 2 * _LEGENDRE_X_200 + (t1 + t0) / 2
     def S_ut_piece2(alpha, Nec, t0, t, u):
@@ -265,9 +271,8 @@ def expected_ld_exponential_carrying_capacity(
         u = u[None, :]
         res_nonzero = 1 / Nec * jnp.exp((-jnp.exp((t - t0) * alpha) + 1 + (2 * t - 2 * t0) * Nec * alpha ** 2 + (-4 * Nec * t * u - t0) * alpha) / alpha / Nec / 2) / 2
         res_taylor = 1 / Nec * jnp.exp(-t * (4 * u * Nec + 1) / Nec / 2) / 2
-        return jnp.where(
-            jnp.abs(alpha) < ALPHA_EPSILON, res_taylor, res_nonzero
-        )
+        weight = jax.nn.sigmoid(SIGMA_SLOPE * (ALPHA_EPSILON - jnp.abs(alpha)))
+        return weight * res_nonzero + (1 - weight) * res_taylor
     piece2 = jnp.sum(
         S_ut_piece2(alpha, Ne_c, t0, times2, u) * _LEGENDRE_W_200[:, None] * (t1 - t0) / 2, axis=0
     )
@@ -335,8 +340,9 @@ def expected_sample_heterozygosity_exponential_carrying_capacity(
     expected_tmrca_taylor = (2 * Ne_a - 2 * Ne_c) * jnp.exp(
         -1 / Ne_c * t1 / 2
     ) + 2 * Ne_c
-    expected_tmrca = jnp.where(
-        jnp.abs(alpha) < ALPHA_EPSILON, expected_tmrca_taylor, expected_tmrca_nonzero
+    weight = jax.nn.sigmoid(SIGMA_SLOPE * (ALPHA_EPSILON - jnp.abs(alpha)))
+    expected_tmrca = (
+        weight * expected_tmrca_nonzero + (1 - weight) * expected_tmrca_taylor
     )
     return expected_tmrca * 2 * mu
 
